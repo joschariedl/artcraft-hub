@@ -815,11 +815,16 @@ impl HubApp {
 
     fn icon(&self, ui: &mut egui::Ui, status: &AppStatus, size: f32) {
         if let Some(texture) = self.icons.get(&status.id) {
-            ui.add(
-                egui::Image::from_texture(texture)
-                    .fit_to_exact_size(Vec2::splat(size))
-                    .maintain_aspect_ratio(true)
-                    .corner_radius(CornerRadius::same((size / 5.0) as u8)),
+            let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
+            let painter = ui.painter_at(rect);
+            let bg = Color32::from_rgb(status.color[0], status.color[1], status.color[2]).linear_multiply(0.18);
+            painter.rect_filled(rect, CornerRadius::same((size / 5.0) as u8), bg);
+            let inner = rect.shrink(size * 0.10);
+            painter.image(
+                texture.id(),
+                inner,
+                egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
+                Color32::WHITE,
             );
         } else {
             let (response, painter) =
@@ -1628,22 +1633,9 @@ fn load_image(path: &PathBuf) -> Option<egui::ColorImage> {
 }
 
 fn to_color_image(image: &image::DynamicImage) -> egui::ColorImage {
-    let thumb = image.thumbnail(256, 256).to_rgba8();
-    // Pad to a square canvas so every app icon renders at one consistent size.
-    let side = 256usize;
-    let mut canvas = vec![0u8; side * side * 4];
-    let w = thumb.width() as usize;
-    let h = thumb.height() as usize;
-    let off_x = (side - w) / 2;
-    let off_y = (side - h) / 2;
-    for y in 0..h {
-        for x in 0..w {
-            let src = (y * w + x) * 4;
-            let dst = ((off_y + y) * side + (off_x + x)) * 4;
-            canvas[dst..dst + 4].copy_from_slice(&thumb.as_raw()[src..src + 4]);
-        }
-    }
-    egui::ColorImage::from_rgba_unmultiplied([side, side], &canvas)
+    let image = image.thumbnail(256, 256).to_rgba8();
+    let size = [image.width() as usize, image.height() as usize];
+    egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw())
 }
 
 /// Finds an icon that is already on disk: installed hicolor theme, the app's
