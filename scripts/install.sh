@@ -17,11 +17,11 @@ install_plugin=1
 
 usage() {
   cat <<'EOF'
-Nutzung: scripts/install.sh [Optionen]
+Usage: scripts/install.sh [options]
 
-  --debug         Debug-Build statt Release
-  --no-plugin     Omarchy-Bar-Plugin nicht installieren
-  --no-enable     Plugin installieren, aber nicht in die Bar aufnehmen
+  --debug         Debug build instead of release
+  --no-plugin     Do not install the Omarchy bar plugin
+  --no-enable     Install the plugin but do not add it to the bar
   -h, --help      Diese Hilfe
 
 Nach der Installation: artcraftctl config --set-vt-key <KEY>
@@ -45,7 +45,7 @@ if [[ -z "$cargo_bin" ]]; then
   elif command -v cargo >/dev/null 2>&1; then
     cargo_bin="$(command -v cargo)"
   else
-    echo "cargo nicht gefunden. Rust installieren: https://rustup.rs" >&2
+    echo "cargo not found. Install Rust: https://rustup.rs" >&2
     exit 1
   fi
 fi
@@ -88,7 +88,7 @@ gtk-update-icon-cache -f -t "${HOME}/.local/share/icons/hicolor" >/dev/null 2>&1
 if (( install_plugin )); then
   printf '\n==> Installiere Omarchy-Plugin nach %s\n' "$PLUGIN_DIR"
   if ! command -v omarchy-shell >/dev/null 2>&1; then
-    echo "Hinweis: omarchy-shell nicht gefunden – das Plugin wird kopiert, aber nicht aktiviert." >&2
+    echo "Note: omarchy-shell not found – the plugin is copied but not activated." >&2
     enable_plugin=0
   fi
 
@@ -103,7 +103,7 @@ if (( install_plugin )); then
     if omarchy plugin validate "$PLUGIN_DIR" >/dev/null 2>&1; then
       echo "    Manifest gültig."
     else
-      echo "Warnung: omarchy plugin validate meldet Probleme für $PLUGIN_DIR" >&2
+      echo "Warning: omarchy plugin validate reports issues for $PLUGIN_DIR" >&2
     fi
   fi
 
@@ -127,8 +127,8 @@ for plugin in plugins:
     elif omarchy plugin enable "$PLUGIN_ID" right >/dev/null 2>&1; then
       echo "    Plugin in der rechten Bar-Sektion aktiviert."
     else
-      echo "Hinweis: Plugin konnte nicht automatisch aktiviert werden." >&2
-      echo "         Manuell: omarchy plugin enable $PLUGIN_ID right" >&2
+      echo "Note: the plugin could not be activated automatically." >&2
+      echo "         Manually: omarchy plugin enable $PLUGIN_ID right" >&2
     fi
   fi
 fi
@@ -137,12 +137,12 @@ printf '\n==> Fertig.\n\n'
 "${BIN_DIR}/artcraftctl" doctor || true
 cat <<EOF
 
-Nächste Schritte:
-  1. VirusTotal-API-Key hinterlegen (Pflicht für jede Installation):
+Next steps:
+  1. Configure a VirusTotal API key (required for every install):
        artcraftctl config --set-vt-key <KEY>     # Key: https://www.virustotal.com/gui/my-apikey
-     oder im Hub unter „Einstellungen“.
-  2. Hub starten:
+     or in the Hub under "Settings".
+  2. Start the hub:
        artcraft-hub
-  3. Status in der Bar / auf der Kommandozeile:
+  3. Status in the bar / on the command line:
        artcraftctl status
 EOF

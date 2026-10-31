@@ -14,11 +14,11 @@ remove_apps=0
 
 usage() {
   cat <<'EOF'
-Nutzung: scripts/uninstall.sh [Optionen]
+Usage: scripts/uninstall.sh [options]
 
-  --apps    Zusätzlich alle installierten ArtCraft-Apps entfernen
-  --purge   Zusätzlich Konfiguration, Status und Cache löschen
-            (enthält den gespeicherten VirusTotal-Key)
+  --apps    Also remove all installed ArtCraft apps
+  --purge   Also delete configuration, status and cache
+            (includes the stored VirusTotal key)
   -h, --help
 EOF
 }
@@ -42,7 +42,7 @@ if (( remove_apps )); then
       "$ctl" uninstall "$app" --yes || true
     done
   else
-    echo "artcraftctl fehlt – Apps werden nicht entfernt." >&2
+    echo "artcraftctl missing – apps are not removed." >&2
   fi
 fi
 
@@ -61,9 +61,9 @@ update-desktop-database "${HOME}/.local/share/applications" >/dev/null 2>&1 || t
 gtk-update-icon-cache -f -t "${HOME}/.local/share/icons/hicolor" >/dev/null 2>&1 || true
 
 if (( purge )); then
-  echo "==> Lösche Konfiguration, Status und Cache"
+  echo "==> Deleting configuration, status and cache"
   rm -rf "$CONFIG_DIR" "$STATE_DIR" "$CACHE_DIR"
 fi
 
 printf '\nFertig.\n'
-(( remove_apps )) || echo "Hinweis: installierte Apps unter ~/.local/opt/artcraft bleiben erhalten."
+(( remove_apps )) || echo "Note: installed apps under ~/.local/opt/artcraft are kept."

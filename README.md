@@ -1,118 +1,115 @@
 # ArtCraft Hub
 
-Ein nativer Installer und Updater für die 13 Apps von [ArtCraft](https://getartcraft.com/apps) –
-gebaut für Arch Linux und [Omarchy](https://omarchy.org) unter Wayland.
+A native installer and updater for the 13 apps from [ArtCraft](https://getartcraft.com/apps) –
+built for Arch Linux and [Omarchy](https://omarchy.org) under Wayland.
 
-ArtCraft Hub lädt die offiziellen `linux-x86_64.tar.gz`-Pakete direkt aus den GitHub-Releases,
-prüft sie gegen die `SHA256SUMS.txt` des Releases **und** gegen VirusTotal, installiert sie ohne
-Root-Rechte nach `~/.local` und legt einen Menüeintrag mit hochauflösendem Icon an.
+ArtCraft Hub downloads the official `linux-x86_64.tar.gz` packages straight from the GitHub
+releases, verifies them against the release's `SHA256SUMS.txt` **and** VirusTotal, installs them
+without root into `~/.local`, and creates a menu entry with a high-resolution icon.
 
-Dazu gibt es:
+It ships three parts:
 
-- **`artcraft-hub`** – eine native GUI (Rust + egui/eframe, kein Electron, kein Webview)
-- **`artcraftctl`** – eine CLI für Status, Installation, Updates und Diagnose
-- **`derfleischmann.artcraft`** – ein Omarchy-Bar-Plugin mit Update-Badge und Popup
+- **`artcraft-hub`** – a native GUI (Rust + egui/eframe, no Electron, no web view)
+- **`artcraftctl`** – a CLI for status, installation, updates and diagnostics
+- **`derfleischmann.artcraft`** – an Omarchy bar plugin with an update badge and popup
 
-Alle Texte sind auf Deutsch.
+All user-facing text is in English.
 
 ---
 
-## Inhalt
+## Contents
 
-- [Die Apps](#die-apps)
-- [Sicherheitsmodell](#sicherheitsmodell)
-- [Voraussetzungen](#voraussetzungen)
+- [The apps](#the-apps)
+- [Security model](#security-model)
+- [Requirements](#requirements)
 - [Installation](#installation)
-- [VirusTotal-Key einrichten](#virustotal-key-einrichten)
-- [Benutzung](#benutzung)
+- [VirusTotal key setup](#virustotal-key-setup)
+- [Usage](#usage)
   - [GUI](#gui)
   - [CLI](#cli)
-  - [Omarchy-Bar-Plugin](#omarchy-bar-plugin)
-- [Datenpfade](#datenpfade)
-- [Konfiguration](#konfiguration)
-- [Funktionsweise im Detail](#funktionsweise-im-detail)
+  - [Omarchy bar plugin](#omarchy-bar-plugin)
+- [Data paths](#data-paths)
+- [Configuration](#configuration)
+- [How it works](#how-it-works)
 - [Troubleshooting](#troubleshooting)
-- [Entwicklung](#entwicklung)
-- [Lizenz](#lizenz)
+- [Development](#development)
+- [License](#license)
 
 ---
 
-## Die Apps
+## The apps
 
-| App | Bereich | Repository |
+| App | Area | Repository |
 | --- | --- | --- |
-| PhotoCraft | Bildbearbeitung | `storytold/photocraft` |
-| VectorCraft | Vektorillustration | `storytold/vectorcraft` |
-| FilmCraft | Videoschnitt, Farbe und Ton | `storytold/filmcraft` |
-| LightCraft | Fotobibliothek und RAW-Entwicklung | `storytold/lightcraft` |
-| PdfCraft | PDF lesen, ordnen und schützen | `storytold/pdfcraft` |
-| EffectCraft | Motion Graphics und VFX | `storytold/effectcraft` |
-| DesignCraft | Seitenlayout und Publishing | `storytold/designcraft` |
-| FigCraft | Interface-Design und Prototyping | `storytold/figcraft` |
-| WordCraft | Textverarbeitung und Dokumentdesign | `storytold/wordcraft` |
-| SoundCraft | Audio aufnehmen, schneiden und mischen | `storytold/soundcraft` |
-| DeckCraft | Präsentationen und Slideshows | `storytold/deckcraft` |
-| CADCraft | CAD und technisches Zeichnen | `storytold/cadcraft` |
-| GridCraft | Tabellen und Datenanalyse | `storytold/gridcraft` |
+| PhotoCraft | Image editing | `storytold/photocraft` |
+| VectorCraft | Vector illustration | `storytold/vectorcraft` |
+| FilmCraft | Video editing, colour and sound | `storytold/filmcraft` |
+| LightCraft | Photo library and RAW development | `storytold/lightcraft` |
+| PdfCraft | Read, organise and protect PDFs | `storytold/pdfcraft` |
+| EffectCraft | Motion graphics and VFX | `storytold/effectcraft` |
+| DesignCraft | Page layout and publishing | `storytold/designcraft` |
+| FigCraft | Interface design and prototyping | `storytold/figcraft` |
+| WordCraft | Word processing and document design | `storytold/wordcraft` |
+| SoundCraft | Record, edit and mix audio | `storytold/soundcraft` |
+| DeckCraft | Presentations and slideshows | `storytold/deckcraft` |
+| CADCraft | CAD and technical drawing | `storytold/cadcraft` |
+| GridCraft | Spreadsheets and data analysis | `storytold/gridcraft` |
 
-Alle 13 Apps haben öffentliche Releases. FigCraft erscheint nur dann als „kein Release“,
-wenn GitHub das API-Limit (60 Anfragen/Stunde ohne Token) erreicht hat – dann fehlt der
-Feed-Fallback für diese App. Ein GitHub-Token (Einstellungen) behebt das.
+All 13 apps have public releases. An app shows as "no release" only when GitHub's API limit
+(60 requests/hour without a token) is reached – the release feed does not include every app,
+so there is no fallback in that case. A GitHub token (settings) fixes it.
 
 ---
 
-## Sicherheitsmodell
+## Security model
 
-Jede Installation und jedes Update durchläuft drei Stufen. Schlägt eine davon fehl, wird **nicht**
-installiert.
+Every install and update passes three stages. If any one fails, **nothing is installed**.
 
-1. **Herkunft** – Download ausschließlich über `https://github.com/…/releases/download/…`.
-   Asset-Namen müssen dem Muster `<id>-<version>-linux-<arch>.tar.gz` entsprechen.
-2. **Integrität (SHA-256)** – Der Hash der heruntergeladenen Datei wird gegen die
-   `SHA256SUMS.txt` des Releases geprüft. Die `SHA256SUMS.txt` selbst wird zusätzlich gegen den
-   von der GitHub-API gemeldeten Asset-Digest (`sha256:…`) verifiziert. Widersprechen sich die
-   beiden Quellen, bricht die Installation mit einem harten Fehler ab.
-3. **Schadsoftware (VirusTotal)** – Die Download-URL wird bei VirusTotal zur Prüfung eingereicht
-   (URL-Scan). Ist der Inhalt dort bereits als Datei bekannt, wird dieser Eintrag verwendet.
-   Installiert wird nur, wenn VirusTotal den **Inhalts-Hash** der URL-Antwort mit dem erwarteten
-   SHA-256 bestätigt und **keine** Engine die Datei als `malicious` oder `suspicious` meldet.
+1. **Origin** – downloads only from `https://github.com/…/releases/download/…`. Asset names
+   must match `<id>-<version>-linux-<arch>.tar.gz`.
+2. **Integrity (SHA-256)** – the downloaded file's hash is checked against the release's
+   `SHA256SUMS.txt`. The `SHA256SUMS.txt` itself is additionally verified against the digest
+   published by the GitHub API (`sha256:…`). If the two sources disagree, the install aborts
+   with a hard error.
+3. **Malware (VirusTotal)** – the download URL is submitted to VirusTotal for a URL scan. If
+   the content is already known as a file there, that entry is used. Installation only happens
+   when VirusTotal confirms the **content hash** of the URL response matches the expected
+   SHA-256 and **no** engine reports the file as `malicious` or `suspicious`.
 
-### Warum URL-Scan statt Datei-Upload?
+### Why a URL scan instead of a file upload?
 
-Die Release-Pakete sind 40–130 MB groß, die öffentliche VirusTotal-API erlaubt aber nur Uploads bis
-32 MB. Der Hub lädt daher nichts zu VirusTotal hoch, sondern übergibt die GitHub-Download-URL.
-VirusTotal lädt die Datei selbst und berechnet den SHA-256 des Inhalts. Diesen Hash vergleicht der
-Hub mit dem erwarteten Hash – damit ist ausgeschlossen, dass ein beliebiger Redirect oder eine
-abweichende Datei „durchgewinkt“ wird.
+The release packages are 40–130 MB, but the public VirusTotal API only accepts uploads up to
+32 MB. The hub therefore uploads nothing; it hands the GitHub download URL to VirusTotal.
+VirusTotal fetches the file itself and computes the SHA-256 of the content. The hub compares
+that hash with the expected one, so a redirected or substituted file cannot slip through.
 
 ### Fail-closed
 
-- Ohne VirusTotal-Key sind Installation und Updates **gesperrt**. Der Hub erklärt das in der GUI und
-  im Popup des Bar-Plugins.
-- Unbekannte oder noch nicht ausgewertete Ergebnisse gelten als Ablehnung. Das Verhalten lässt sich
-  nur bewusst über `vt.allow_unknown = true` (bzw. `artcraftctl config --allow-unknown true`)
-  ändern – davon ist abzuraten.
-- Die VirusTotal-Ergebnisse werden pro SHA-256 für 7 Tage gecacht. Das schont das Kontingent
-  (Public API: 4 Anfragen/Minute, 500/Tag) und macht wiederholte Prüfungen schnell.
+- Without a VirusTotal key, installs and updates are **locked**. The GUI and the bar-plugin popup
+  explain this.
+- Unknown or not-yet-finished results count as rejection. This can only be overridden deliberately
+  via `vt.allow_unknown = true` (`artcraftctl config --allow-unknown true`) – not recommended.
+- VirusTotal results are cached per SHA-256 for 7 days. This protects the quota (public API:
+  4 requests/minute, 500/day) and makes repeated checks fast.
 
-### Was der Hub *nicht* tut
+### What the hub does *not* do
 
-- Keine Root-Rechte, keine Schreibzugriffe außerhalb des Home-Verzeichnisses.
-- Kein Auto-Update im Hintergrund: Installationen starten immer auf ausdrückliche Aktion.
-- Keine Telemetrie. Netzwerkzugriffe gehen nur an GitHub, `api.storyteller.ai` (Metadaten-Fallback)
-  und – bei hinterlegtem Key – an `www.virustotal.com`.
+- No root privileges, no writes outside the home directory.
+- No background auto-update: installs always start on explicit user action.
+- No telemetry. Network access goes only to GitHub, `api.storyteller.ai` (metadata fallback)
+  and – with a key configured – `www.virustotal.com`.
 
 ---
 
-## Voraussetzungen
+## Requirements
 
-- Arch Linux oder Omarchy (getestet mit Omarchy 4.0.6, Hyprland 0.56, Wayland)
-- Rust 1.85 oder neuer (`rustup` empfohlen) – nur zum Bauen
-- `git`, `python3` (für das Installationsskript), optional `desktop-file-utils` und
+- Arch Linux or Omarchy (tested with Omarchy 4.0.6, Hyprland 0.56, Wayland)
+- Rust 1.85 or newer (`rustup` recommended) – only for building
+- `git`, `python3` (used by the install script), optionally `desktop-file-utils` and
   `gtk-update-icon-cache`
-- Ein kostenloser [VirusTotal-API-Key](https://www.virustotal.com/gui/my-apikey)
+- A free [VirusTotal API key](https://www.virustotal.com/gui/my-apikey)
 
-Für Wayland bringt die GUI alles Nötige mit; es wird kein X11 und kein Webview benötigt.
+The GUI brings everything it needs for Wayland; no X11 and no web view required.
 
 ---
 
@@ -124,59 +121,59 @@ cd artcraft-hub
 ./scripts/install.sh
 ```
 
-Das Skript baut den Workspace im Release-Modus und installiert:
+The script builds the workspace in release mode and installs:
 
-| Datei | Ziel |
+| File | Destination |
 | --- | --- |
 | `artcraft-hub` | `~/.local/bin/artcraft-hub` |
 | `artcraftctl` | `~/.local/bin/artcraftctl` |
-| Hub-Icon | `~/.local/share/icons/hicolor/scalable/apps/artcraft-hub.svg` |
-| Menüeintrag | `~/.local/share/applications/artcraft-hub.desktop` |
-| Bar-Plugin | `~/.config/omarchy/plugins/derfleischmann.artcraft/` |
+| Hub icon | `~/.local/share/icons/hicolor/scalable/apps/artcraft-hub.svg` |
+| Menu entry | `~/.local/share/applications/artcraft-hub.desktop` |
+| Bar plugin | `~/.config/omarchy/plugins/derfleischmann.artcraft/` |
 
-Anschließend wird das Plugin validiert und – falls `omarchy` verfügbar ist – in der rechten
-Bar-Sektion aktiviert. Zum Schluss läuft `artcraftctl doctor`.
+The plugin is then validated and – if `omarchy` is available – activated in the right bar
+section. Finally `artcraftctl doctor` runs.
 
-Optionen:
+Options:
 
 ```bash
-./scripts/install.sh --debug        # Debug-Build
-./scripts/install.sh --no-plugin    # ohne Omarchy-Plugin
-./scripts/install.sh --no-enable    # Plugin kopieren, aber nicht in die Bar aufnehmen
+./scripts/install.sh --debug        # debug build
+./scripts/install.sh --no-plugin    # without the Omarchy plugin
+./scripts/install.sh --no-enable    # copy the plugin but do not add it to the bar
 ```
 
-Deinstallieren:
+Uninstall:
 
 ```bash
-./scripts/uninstall.sh            # nur Hub, CLI, Icon, Desktop-Datei und Plugin
-./scripts/uninstall.sh --apps     # zusätzlich alle installierten ArtCraft-Apps
-./scripts/uninstall.sh --purge    # zusätzlich Konfiguration, Status und Caches
+./scripts/uninstall.sh            # only hub, CLI, icon, desktop file and plugin
+./scripts/uninstall.sh --apps     # additionally all installed ArtCraft apps
+./scripts/uninstall.sh --purge    # additionally configuration, status and caches
 ```
 
 ---
 
-## VirusTotal-Key einrichten
+## VirusTotal key setup
 
 ```bash
-artcraftctl config --set-vt-key <DEIN_KEY>
+artcraftctl config --set-vt-key <YOUR_KEY>
 ```
 
-Der Key landet in `~/.config/artcraft-hub/config.toml` mit Dateirechten `0600`. Alternativ kann er
-über die Umgebungsvariable `VIRUSTOTAL_API_KEY` gesetzt werden; die GUI bietet dafür ein Feld unter
-**Einstellungen**.
+The key is stored in `~/.config/artcraft-hub/config.toml` with mode `0600`. Alternatively it can
+be provided via the `VIRUSTOTAL_API_KEY` environment variable; the GUI offers a field under
+**Settings**.
 
-Prüfen:
+Check:
 
 ```bash
 artcraftctl doctor
 ```
 
-Der Doctor zeigt an, ob der Key gefunden wird, ob `~/.local/bin` im `PATH` liegt und ob die
-Hilfswerkzeuge vorhanden sind.
+Doctor reports whether the key is found, whether `~/.local/bin` is on `PATH` and whether the
+helper tools are present.
 
 ---
 
-## Benutzung
+## Usage
 
 ### GUI
 
@@ -184,214 +181,212 @@ Hilfswerkzeuge vorhanden sind.
 artcraft-hub
 ```
 
-Oder über das Anwendungsmenü („ArtCraft Hub“). Die Oberfläche zeigt alle 13 Apps mit Icon,
-installierter Version und der neuesten verfügbaren Version.
+Or via the application menu ("ArtCraft Hub"). The UI shows all 13 apps with icon, installed
+version and the latest available version.
 
-- **Installieren** – lädt, prüft (SHA-256 + VirusTotal) und installiert die aktuelle Version.
-- **Aktualisieren** – erscheint, sobald eine neuere Version verfügbar ist; einzeln oder alle
-  zusammen.
-- **Deinstallieren** – entfernt Programm, Symlinks, Desktop-Datei und Icons der App.
-- **Neu prüfen** – erzwingt eine Netzwerkabfrage statt des 30-Minuten-Caches.
-- **Einstellungen** – VirusTotal-Key, GitHub-Token, Prüfintervall, Icon-Optionen und Sprache.
+- **Install** – downloads, verifies (SHA-256 + VirusTotal) and installs the current version.
+- **Update** – appears once a newer version is available; per app or all at once.
+- **Remove** – removes the program, symlinks, desktop file and icons of the app.
+- **Refresh** – forces a network query instead of the 30-minute cache.
+- **Settings** – VirusTotal key, GitHub token, check interval, icon options, language.
 
-Während eines Downloads zeigt die GUI Fortschritt und die jeweils laufende Prüfstufe an. Fehler
-werden im Klartext erklärt (fehlender Key, Hash-Konflikt, VirusTotal-Fund, kein Release …).
+During a download the GUI shows progress and the current verification stage. Errors are
+explained in plain text (missing key, hash conflict, VirusTotal finding, no release, …).
 
 ### CLI
 
 ```bash
-artcraftctl list                 # Tabelle aller Apps und Versionen
-artcraftctl status               # kompakter Status (Cache, ~0 s)
-artcraftctl status --refresh     # Status mit Netzwerkabfrage
-artcraftctl check                # gezielt nach Updates suchen
-artcraftctl install gridcraft    # eine App installieren
-artcraftctl upgrade --all        # alle Apps aktualisieren
-artcraftctl upgrade photocraft   # eine App aktualisieren
-artcraftctl uninstall deckcraft  # eine App entfernen
-artcraftctl doctor               # Umgebung und Schlüssel prüfen
-artcraftctl config --show        # aktuelle Konfiguration anzeigen
+artcraftctl list                 # table of all apps and versions
+artcraftctl status               # compact status (cache, ~0 s)
+artcraftctl status --refresh     # status with network query
+artcraftctl check                # look for updates
+artcraftctl install gridcraft    # install one app
+artcraftctl upgrade --all        # update all apps
+artcraftctl upgrade photocraft   # update one app
+artcraftctl uninstall deckcraft  # remove one app
+artcraftctl doctor               # check environment and keys
+artcraftctl config --show        # show current configuration
 ```
 
-Nützliche Flags: `--json` für maschinenlesbare Ausgabe (`list`, `status`, `check`, `doctor`),
-`-y/--yes` zum Überspringen der Rückfrage, `--force` zum erneuten Installieren der neuesten
-Version, `--refresh` zum Ignorieren des Metadaten-Caches.
+Useful flags: `--json` for machine-readable output (`list`, `status`, `check`, `doctor`),
+`-y/--yes` to skip the confirmation, `--force` to reinstall the latest version,
+`--refresh` to ignore the metadata cache.
 
-Beispiel:
+Example:
 
 ```console
 $ artcraftctl status
-App          Installiert    Neueste        Status
-photocraft   0.16.0         0.17.0         Update verfügbar
-gridcraft    0.13.0         0.13.0         aktuell
-vectorcraft  –              0.18.0         nicht installiert
+App          Installed    Latest         Status
+photocraft   0.16.0       0.17.0         Update available
+gridcraft    0.13.0       0.13.0         up to date
+vectorcraft  –            0.18.0         not installed
 ```
 
-### Omarchy-Bar-Plugin
+### Omarchy bar plugin
 
-Das Plugin sitzt in der rechten Bar-Sektion (Pinsel-Symbol). Es zeigt einen Punkt und eine
-Hervorhebung, sobald Updates verfügbar sind; der Tooltip nennt die Anzahl.
+The plugin sits in the right bar section (paintbrush icon). It shows a dot and highlight once
+updates are available; the tooltip names the count.
 
-| Aktion | Wirkung |
+| Action | Effect |
 | --- | --- |
-| Linksklick | Popup öffnen/schließen |
-| Mittelklick | Popup direkt öffnen |
-| `r` im Popup | Neu prüfen |
-| `o` im Popup | ArtCraft Hub starten |
-| `Enter` im Popup | Alle Updates installieren |
+| Left click | open/close popup |
+| Middle click | open popup directly |
+| `r` in popup | re-check |
+| `o` in popup | start ArtCraft Hub |
+| `Enter` in popup | update all |
+| click an app name | open the installed app |
 
-Das Popup listet installierte Apps mit Update, nicht installierte Apps und – falls nötig – eine
-deutliche Warnung, wenn der VirusTotal-Key fehlt. Der Upgrade-Lauf startet in einem schwebenden
-Terminal, damit Fortschritt und Prüfergebnisse sichtbar bleiben.
+The popup lists installed apps with updates, not-installed apps and – if needed – a clear warning
+when the VirusTotal key is missing. The upgrade run starts in a floating terminal so progress
+and verification results stay visible.
 
-Manuell steuern:
+Manual control:
 
 ```bash
-omarchy plugin list                       # Status
+omarchy plugin list                       # status
 omarchy plugin enable derfleischmann.artcraft right
 omarchy plugin disable derfleischmann.artcraft
-omarchy-shell derfleischmann.artcraft open     # Popup per IPC öffnen
+omarchy-shell derfleischmann.artcraft open     # open popup via IPC
 omarchy-shell derfleischmann.artcraft close
 ```
 
-Das Plugin liegt zusätzlich im Repository unter `plugins/derfleischmann.artcraft/`.
+The plugin also lives in the repository under `plugins/derfleischmann.artcraft/`.
 
 ---
 
-## Datenpfade
+## Data paths
 
-| Inhalt | Pfad |
+| Content | Path |
 | --- | --- |
-| Konfiguration (0600) | `~/.config/artcraft-hub/config.toml` |
-| Status / installierte Versionen | `~/.local/state/artcraft-hub/state.json` |
-| VirusTotal-Cache | `~/.local/state/artcraft-hub/virustotal-cache.json` |
-| Downloads, Icons | `~/.cache/artcraft-hub/` |
-| Installierte Apps | `~/.local/opt/artcraft/<id>/<version>/` |
-| Startbefehle | `~/.local/bin/<id>` (Symlink auf die aktive Version) |
-| Menüeinträge der Apps | `~/.local/share/applications/ai.storyteller.<id>.desktop` |
-| Icons der Apps | `~/.local/share/icons/hicolor/…/apps/ai.storyteller.<id>.png` |
+| Configuration (0600) | `~/.config/artcraft-hub/config.toml` |
+| Status / installed versions | `~/.local/state/artcraft-hub/state.json` |
+| VirusTotal cache | `~/.local/state/artcraft-hub/virustotal-cache.json` |
+| Downloads, icons | `~/.cache/artcraft-hub/` |
+| Installed apps | `~/.local/opt/artcraft/<id>/<version>/` |
+| Launchers | `~/.local/bin/<id>` (symlink to the active version) |
+| Menu entries of the apps | `~/.local/share/applications/ai.storyteller.<id>.desktop` |
+| Icons of the apps | `~/.local/share/icons/hicolor/…/apps/ai.storyteller.<id>.png` |
 
-Mehrere Versionen einer App können parallel unter `~/.local/opt/artcraft/<id>/` liegen; der
-Symlink in `~/.local/bin` zeigt auf die aktive. Eine Deinstallation entfernt alle Versionen der App.
+Several versions of an app can live in parallel under `~/.local/opt/artcraft/<id>/`; the symlink
+in `~/.local/bin` points at the active one. Uninstalling removes all versions of the app.
 
 ---
 
-## Konfiguration
+## Configuration
 
-`~/.config/artcraft-hub/config.toml` (wird beim ersten Speichern mit `0600` angelegt):
+`~/.config/artcraft-hub/config.toml` (created with mode `0600` on first save):
 
-| Schlüssel | Standard | Bedeutung |
+| Key | Default | Meaning |
 | --- | --- | --- |
-| `github_token` | `""` | Optional; hebt das GitHub-Limit von 60 auf 5000 Anfragen/Stunde |
-| `virustotal_api_key` | `""` | Pflicht für Installationen (oder `VIRUSTOTAL_API_KEY`) |
-| `metadata_cache_minutes` | `30` | Gültigkeit der Release-Metadaten |
-| `check_interval_minutes` | `60` | Empfohlenes Prüfintervall für Hub und Plugin |
-| `require_sha256sums` | `true` | Releases ohne `SHA256SUMS.txt` ablehnen |
-| `install_1024_icons` | `true` | 1024-px-PNG aus dem App-Repository zusätzlich installieren |
-| `language` | `de` | UI-Sprache |
-| `vt.min_interval_seconds` | `16` | Mindestabstand zwischen VirusTotal-Anfragen |
-| `vt.cache_days` | `7` | Gültigkeit eines VirusTotal-Ergebnisses |
-| `vt.poll_seconds` | `20` | Wartezeit zwischen Statusabfragen eines URL-Scans |
-| `vt.max_polls` | `15` | Maximale Anzahl Statusabfragen |
-| `vt.allow_unknown` | `false` | Unklare Ergebnisse zulassen (**nicht empfohlen**) |
+| `github_token` | `""` | Optional; raises the GitHub limit from 60 to 5,000 requests/hour |
+| `virustotal_api_key` | `""` | Required for installs (or `VIRUSTOTAL_API_KEY`) |
+| `metadata_cache_minutes` | `30` | Lifetime of release metadata |
+| `check_interval_minutes` | `60` | Recommended check interval for hub and plugin |
+| `require_sha256sums` | `true` | Reject releases without `SHA256SUMS.txt` |
+| `install_1024_icons` | `true` | Also install the 1024 px PNG from the app repository |
+| `language` | `en` | UI language |
+| `vt.min_interval_seconds` | `16` | Minimum spacing between VirusTotal requests |
+| `vt.cache_days` | `7` | Lifetime of a VirusTotal result |
+| `vt.poll_seconds` | `20` | Wait between status polls of a URL scan |
+| `vt.max_polls` | `15` | Maximum number of status polls |
+| `vt.allow_unknown` | `false` | Allow unclear results (**not recommended**) |
 
-Ändern lassen sich Key, GitHub-Token und `allow_unknown` über `artcraftctl config`; alles andere
-per Editor oder in der GUI.
+The key, the GitHub token and `allow_unknown` can be changed via `artcraftctl config`; everything
+else via editor or in the GUI.
 
 ---
 
-## Funktionsweise im Detail
+## How it works
 
-**Release-Erkennung.** Primär über die GitHub-API (`/releases/latest`). Als Fallback – etwa bei
-aufgebrauchtem API-Kontingent – fragt der Hub `https://api.storyteller.ai/v1/craft_apps/release_info`
-einmal für alle Apps ab. Download und `SHA256SUMS.txt` kommen immer direkt von GitHub.
+**Release discovery.** Primarily via the GitHub API (`/releases/latest`). As a fallback – for
+example when the API quota is exhausted – the hub queries
+`https://api.storyteller.ai/v1/craft_apps/release_info` once for all apps. Downloads and
+`SHA256SUMS.txt` always come directly from GitHub.
 
-**Installation.** Das `tar.gz` wird im Cache entpackt, jeder Pfad wird auf Traversal geprüft
-(keine absoluten Pfade, kein `..`), und der Inhalt wird nach `~/.local/opt/artcraft/<id>/<version>/`
-verschoben. Danach werden Symlinks in `~/.local/bin`, die Desktop-Datei (mit korrektem
-`StartupWMClass` und Icon-Namen) und die Icons in `hicolor` angelegt. Abschließend laufen
-`update-desktop-database` und `gtk-update-icon-cache`, damit die Apps sofort im Omarchy-Menü
-erscheinen.
+**Installation.** The `tar.gz` is extracted into the cache, every path is checked for traversal
+(no absolute paths, no `..`), and the content is moved to
+`~/.local/opt/artcraft/<id>/<version>/`. Then symlinks in `~/.local/bin`, the desktop file (with
+correct `StartupWMClass` and icon name) and the icons in `hicolor` are created. Finally
+`update-desktop-database` and `gtk-update-icon-cache` run so the apps appear in the Omarchy menu
+immediately.
 
-**Icons.** Bevorzugt wird `assets/app-icon/<id>-1024.png` aus dem jeweiligen Repository
-(1024×1024, RGBA). Fehlt es, greift der Hub auf die Icons im Tarball zurück. Die GUI cached die
-PNGs unter `~/.cache/artcraft-hub/icons/`.
+**Icons.** Preferably `assets/app-icon/<id>-1024.png` from the respective repository
+(1024×1024, RGBA). If missing, the hub falls back to the icons in the tarball. The GUI caches
+the PNGs under `~/.cache/artcraft-hub/icons/`.
 
-**Status.** `artcraftctl status` liest den lokalen Status und die gecachten Metadaten, daher ist
-der Aufruf für das Bar-Plugin praktisch kostenlos. `--refresh` bzw. `check` erzwingen eine
-Netzwerkabfrage.
+**Status.** `artcraftctl status` reads the local status and cached metadata, so the call is
+essentially free for the bar plugin. `--refresh` or `check` force a network query.
 
 ---
 
 ## Troubleshooting
 
-**„VirusTotal-Key fehlt“ / Installationen gesperrt.**
-Key hinterlegen: `artcraftctl config --set-vt-key <KEY>`, danach `artcraftctl doctor`.
+**"VirusTotal key missing" / installs locked.**
+Configure a key: `artcraftctl config --set-vt-key <KEY>`, then `artcraftctl doctor`.
 
-**„VirusTotal-Kontingent erschöpft“ oder HTTP 429.**
-Die Public API erlaubt 4 Anfragen/Minute und 500/Tag. Der Hub drosselt selbst auf eine Anfrage alle
-16 Sekunden und cacht Ergebnisse 7 Tage. Bei häufigem Testen hilft Warten oder ein eigener Key.
+**"VirusTotal quota exhausted" or HTTP 429.**
+The public API allows 4 requests/minute and 500/day. The hub throttles itself to one request
+every 16 seconds and caches results for 7 days. When testing frequently, wait or use your own key.
 
-**„Hash stimmt nicht überein“ / Hash-Konflikt.**
-Die Datei weicht von `SHA256SUMS.txt` oder vom GitHub-Asset-Digest ab. Das kann ein abgebrochener
-Download sein – erneut versuchen. Bleibt es dabei, nicht installieren und das Release im
-App-Repository melden.
+**"Hash mismatch" / hash conflict.**
+The file differs from `SHA256SUMS.txt` or from the GitHub asset digest. This can be a broken
+download – retry. If it persists, do not install and report the release in the app repository.
 
-**„Kein Release“ für FigCraft (oder andere Apps).**
-Meist ein erreichtes GitHub-API-Limit (60 Anfragen/Stunde ohne Token). Der Release-Feed
-enthält FigCraft nicht, daher gibt es keinen Fallback. Lösung: `artcraftctl config --set-github-token <TOKEN>`
-oder warten. Mit Token (5.000 Anfragen/Stunde) tritt das nicht mehr auf.
+**"No release" for FigCraft (or other apps).**
+Usually a reached GitHub API limit (60 requests/hour without a token). The release feed does
+not contain FigCraft, so there is no fallback. Solution: `artcraftctl config --set-github-token <TOKEN>`
+or wait. With a token (5,000 requests/hour) this no longer happens.
 
-**GitHub-API-Limit (HTTP 403).**
-Ohne Token erlaubt GitHub 60 Anfragen/Stunde. Der Feed-Fallback greift automatisch; optional
-`artcraftctl config --set-github-token <TOKEN>` setzen.
+**GitHub API limit (HTTP 403).**
+Without a token GitHub allows 60 requests/hour. The feed fallback kicks in automatically;
+optionally set `artcraftctl config --set-github-token <TOKEN>`.
 
-**App erscheint nicht im Menü.**
-`update-desktop-database ~/.local/share/applications` und
-`gtk-update-icon-cache -f ~/.local/share/icons/hicolor` ausführen. Prüfen, ob `~/.local/bin` im
-`PATH` liegt und die Desktop-Datei unter `~/.local/share/applications/` existiert.
+**App does not appear in the menu.**
+Run `update-desktop-database ~/.local/share/applications` and
+`gtk-update-icon-cache -f ~/.local/share/icons/hicolor`. Check that `~/.local/bin` is on `PATH`
+and that the desktop file exists under `~/.local/share/applications/`.
 
-**Plugin zeigt „artcraftctl lieferte keine gültige Antwort“.**
-`~/.local/bin/artcraftctl` fehlt oder ist nicht ausführbar. `./scripts/install.sh` erneut ausführen
-und mit `artcraftctl doctor` prüfen.
+**Plugin shows "artcraftctl returned no valid response".**
+`~/.local/bin/artcraftctl` is missing or not executable. Re-run `./scripts/install.sh` and
+verify with `artcraftctl doctor`.
 
-**Plugin nicht in der Bar.**
-`omarchy plugin list` prüfen; aktivieren mit
-`omarchy plugin enable derfleischmann.artcraft right`. Die Position lässt sich anschließend in
-`~/.config/omarchy/shell.json` unter `bar.layout.right` verschieben.
+**Plugin not in the bar.**
+Check `omarchy plugin list`; activate with
+`omarchy plugin enable derfleischmann.artcraft right`. The position can then be moved in
+`~/.config/omarchy/shell.json` under `bar.layout.right`.
 
-**GUI startet nicht unter Wayland.**
-`WAYLAND_DISPLAY` prüfen (`echo $WAYLAND_DISPLAY`). Die GUI nutzt eframe/glow; auf Systemen ohne
-passende GL-Treiber hilft `LIBGL_ALWAYS_SOFTWARE=1 artcraft-hub`.
+**GUI does not start under Wayland.**
+Check `WAYLAND_DISPLAY` (`echo $WAYLAND_DISPLAY`). The GUI uses eframe/glow; on systems without
+suitable GL drivers try `LIBGL_ALWAYS_SOFTWARE=1 artcraft-hub`.
 
 ---
 
-## Entwicklung
+## Development
 
 ```bash
-cargo build --workspace              # Debug
-cargo build --workspace --release    # Release
-cargo test --workspace               # Tests (30+ in artcraft-core)
+cargo build --workspace              # debug
+cargo build --workspace --release    # release
+cargo test --workspace               # tests (30+ in artcraft-core)
 cargo clippy --workspace --all-targets
 ```
 
-Aufbau:
+Layout:
 
 ```
-crates/artcraft-core/   Katalog, GitHub, VirusTotal, Download, Installation, Status
+crates/artcraft-core/   catalogue, GitHub, VirusTotal, download, installation, status
 crates/artcraft-hub/    GUI (eframe/egui)
 crates/artcraftctl/     CLI
-plugins/                Omarchy-Bar-Plugin (QML)
-assets/                 Hub-Icon
+plugins/                Omarchy bar plugin (QML)
+assets/                 Hub icon
 scripts/                install.sh, uninstall.sh
 ```
 
-Die Kernlogik ist frei von UI-Abhängigkeiten und wird über `ops::{check_all, install,
-upgrade_all, uninstall, doctor}` von GUI und CLI gemeinsam genutzt.
+The core logic is free of UI dependencies and is shared by GUI and CLI through
+`ops::{check_all, install, upgrade_all, uninstall, doctor}`.
 
 ---
 
-## Lizenz
+## License
 
-MIT – siehe Repository-Metadaten. ArtCraft selbst ist ein Produkt von Storytold; dieses Projekt
-steht in keiner offiziellen Verbindung dazu und installiert ausschließlich die offiziellen
-Release-Pakete.
+MIT – see repository metadata. ArtCraft itself is a product of Storytold; this project is not
+officially affiliated with it and installs only the official release packages.
