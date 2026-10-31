@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# Builds and installs ArtCraft Hub, artcraftctl and the Omarchy bar plugin.
+#
+# Everything lands in the user's home – no root, no system directories.
+set -euo pipefail
+
+readonly REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly PLUGIN_ID="derfleischmann.artcraft"
+readonly BIN_DIR="${HOME}/.local/bin"
+readonly ICON_DIR="${HOME}/.local/share/icons/hicolor/scalable/apps"
+readonly APPLICATIONS_DIR="${HOME}/.local/share/applications"
+readonly PLUGIN_DIR="${HOME}/.config/omarchy/plugins/${PLUGIN_ID}"
+
+profile="release"
+enable_plugin=1
+install_plugin=1
+
+usage() {
+  cat <<'EOF'
+Nutzung: scripts/install.sh [Optionen]
+
+  --debug         Debug-Build statt Release
+  --no-plugin     Omarchy-Bar-Plugin nicht installieren
+  --no-enable     Plugin installieren, aber nicht in die Bar aufnehmen
+  -h, --help      Diese Hilfe
+
+Nach der Installation: artcraftctl config --set-vt-key <KEY>
+EOF
+}
+
+for arg in "$@"; do
+  case "$arg" in
+    --debug) profile="debug" ;;
+    --no-plugin) install_plugin=0; enable_plugin=0 ;;
+    --no-enable) enable_plugin=0 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unbekannte Option: $arg" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+cargo_bin="${CARGO:-}"
+if [[ -z "$cargo_bin" ]]; then
+  if [[ -x "${HOME}/.cargo/bin/cargo" ]]; then
+    cargo_bin="${HOME}/.cargo/bin/cargo"
+  elif command -v cargo >/dev/null 2>&1; then
+    cargo_bin="$(command -v cargo)"
+  else
+    echo "cargo nicht gefunden. Rust installieren: https://rustup.rs" >&2
+    exit 1
+  fi
+fi
+
+printf '\n==> Baue ArtCraft Hub (%s)\n' "$profile"
+build_args=(build --workspace)
+[[ "$profile" == "release" ]] && build_args+=(--release)
+(cd "$REPO_ROOT" && "$cargo_bin" "${build_args[@]}")
+
+readonly TARGET_DIR="${REPO_ROOT}/target/${profile}"
+
+printf '\n==> Installiere Programme nach %s\n' "$BIN_DIR"
+install -d -m 0755 "$BIN_DIR"
+install -m 0755 "${TARGET_DIR}/artcraftctl" "${BIN_DIR}/artcraftctl"
+install -m 0755 "${TARGET_DIR}/artcraft-hub" "${BIN_DIR}/artcraft-hub"
+
+printf '==> Installiere Icon und Desktop-Datei\n'
+install -d -m 0755 "$ICON_DIR" "$APPLICATIONS_DIR"
+install -m 0644 "${REPO_ROOT}/assets/artcraft-hub.svg" "${ICON_DIR}/artcraft-hub.svg"
+
+cat >"${APPLICATIONS_DIR}/artcraft-hub.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=ArtCraft Hub
+GenericName=ArtCraft-Apps verwalten
+Comment=Die 13 ArtCraft-Apps installieren und aktualisieren
+Exec=${BIN_DIR}/artcraft-hub
+TryExec=${BIN_DIR}/artcraft-hub
+Icon=artcraft-hub
+Terminal=false
+Categories=Utility;
+Keywords=ArtCraft;Design;Photo;Video;Audio;Update;Installer;
+StartupNotify=true
+StartupWMClass=artcraft-hub
+EOF
+chmod 0644 "${APPLICATIONS_DIR}/artcraft-hub.desktop"
+update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
+gtk-update-icon-cache -f -t "${HOME}/.local/share/icons/hicolor" >/dev/null 2>&1 || true
+
+if (( install_plugin )); then
+  printf '\n==> Installiere Omarchy-Plugin nach %s\n' "$PLUGIN_DIR"
+  if ! command -v omarchy-shell >/dev/null 2>&1; then
+    echo "Hinweis: omarchy-shell nicht gefunden – das Plugin wird kopiert, aber nicht aktiviert." >&2
+    enable_plugin=0
+  fi
+
+  rm -rf "$PLUGIN_DIR"
+  install -d -m 0755 "$PLUGIN_DIR"
+  install -m 0644 "${REPO_ROOT}/plugins/${PLUGIN_ID}/manifest.json" "$PLUGIN_DIR/manifest.json"
+  install -m 0644 "${REPO_ROOT}/plugins/${PLUGIN_ID}/BarWidget.qml" "$PLUGIN_DIR/BarWidget.qml"
+  install -m 0644 "${REPO_ROOT}/plugins/${PLUGIN_ID}/ArtcraftPanel.qml" "$PLUGIN_DIR/ArtcraftPanel.qml"
+  install -m 0644 "${REPO_ROOT}/plugins/${PLUGIN_ID}/README.md" "$PLUGIN_DIR/README.md" 2>/dev/null || true
+
+  if command -v omarchy >/dev/null 2>&1; then
+    if omarchy plugin validate "$PLUGIN_DIR" >/dev/null 2>&1; then
+      echo "    Manifest gültig."
+    else
+      echo "Warnung: omarchy plugin validate meldet Probleme für $PLUGIN_DIR" >&2
+    fi
+  fi
+
+  if (( enable_plugin )); then
+    omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
+    plugin_enabled=$(omarchy plugin list --json 2>/dev/null | python3 -c '
+import json, sys
+target = "derfleischmann.artcraft"
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(2)
+plugins = data if isinstance(data, list) else data.get("plugins", [])
+for plugin in plugins:
+    if plugin.get("id") == target and plugin.get("enabled") is True:
+        print("yes")
+        break
+' 2>/dev/null || true)
+    if [[ "$plugin_enabled" == "yes" ]]; then
+      echo "    Plugin ist bereits aktiv."
+    elif omarchy plugin enable "$PLUGIN_ID" right >/dev/null 2>&1; then
+      echo "    Plugin in der rechten Bar-Sektion aktiviert."
+    else
+      echo "Hinweis: Plugin konnte nicht automatisch aktiviert werden." >&2
+      echo "         Manuell: omarchy plugin enable $PLUGIN_ID right" >&2
+    fi
+  fi
+fi
+
+printf '\n==> Fertig.\n\n'
+"${BIN_DIR}/artcraftctl" doctor || true
+cat <<EOF
+
+Nächste Schritte:
+  1. VirusTotal-API-Key hinterlegen (Pflicht für jede Installation):
+       artcraftctl config --set-vt-key <KEY>     # Key: https://www.virustotal.com/gui/my-apikey
+     oder im Hub unter „Einstellungen“.
+  2. Hub starten:
+       artcraft-hub
+  3. Status in der Bar / auf der Kommandozeile:
+       artcraftctl status
+EOF
