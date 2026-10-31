@@ -58,6 +58,9 @@ Key modules:
   `icon_urls()`, `valid_*` validators. Feed URL: `https://api.storyteller.ai/v1/craft_apps/release_info`.
 - `vt.rs` – `VtClient`, `VtResult`, `Verdict`, `Stats`, `VtCache`. URL-scan flow: file_report → submit_url →
   poll → url_report → hash comparison. `invalidate()`, `new()`, `check()`. Rate limiting (16s), 7-day cache.
+  - `VtResult::permalink()` links to `/gui/file/<sha256>` for file reports and `/gui/url/<base64url>` for
+    URL-scan verdicts. URL-scan results store the scanned `url`; older cache entries are backfilled on the
+    next check and otherwise fall back to the release plan's asset URL in the GUI.
 - `download.rs` – `fetch()` (streaming download with SHA-256 check), `fetch_bytes()`, `has_checksum()`.
 - `install.rs` – `extract_archive()`, `checked_relative()`, `install_archive()`, `find_main_binary()`,
   `write_desktop_file()`, `build_desktop_file()`, `quote_exec()`, `copy_icons()`, `copy_extras()`,

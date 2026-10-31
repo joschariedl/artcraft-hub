@@ -19,6 +19,7 @@ use artcraft_core::config::Config;
 use artcraft_core::ops::{self, AppStatus};
 use artcraft_core::paths::Paths;
 use artcraft_core::progress::Progress;
+use artcraft_core::vt::{self, VtCache};
 
 const BG: Color32 = Color32::from_rgb(13, 17, 24);
 const PANEL: Color32 = Color32::from_rgb(18, 23, 32);
@@ -150,6 +151,7 @@ struct HubApp {
     toast: Option<(String, bool, Instant)>,
     confirm_uninstall: Option<String>,
     show_log: bool,
+    vt_cache: VtCache,
 }
 
 impl HubApp {
@@ -198,6 +200,7 @@ impl HubApp {
 
         Self {
             settings: SettingsDraft::from_config(&cfg),
+            vt_cache: VtCache::load(&paths),
             paths,
             cfg,
             statuses: Vec::new(),
@@ -431,6 +434,7 @@ impl HubApp {
                 Msg::Status(statuses) => {
                     self.busy = None;
                     self.download = None;
+                    self.vt_cache = VtCache::load(&self.paths);
                     let errors = statuses.iter().filter(|s| s.error.is_some()).count();
                     self.statuses = statuses;
                     if self.selected.is_none() {
@@ -465,6 +469,7 @@ impl HubApp {
                 Msg::Done { text, ok } => {
                     self.busy = None;
                     self.download = None;
+                    self.vt_cache = VtCache::load(&self.paths);
                     self.push_log(text.clone());
                     self.toast(text, ok);
                     needs_check = true;
@@ -1061,11 +1066,20 @@ impl HubApp {
                     ui.add_space(4.0);
                     ui.horizontal_wrapped(|ui| {
                         if let Some(sha) = &status.latest_sha256 {
-                            let url = format!("https://www.virustotal.com/gui/file/{sha}");
+                            let url = self
+                                .vt_cache
+                                .entries
+                                .get(&sha.to_ascii_lowercase())
+                                .map(|result| {
+                                    result.permalink_with(
+                                        status.plan.as_ref().map(|plan| plan.asset_url.as_str()),
+                                    )
+                                })
+                                .unwrap_or_else(|| vt::file_report_permalink(sha));
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("VirusTotal permalink").small().color(ACCENT),
+                                        RichText::new("VirusTotal report").small().color(ACCENT),
                                     )
                                     .frame(false),
                                 )

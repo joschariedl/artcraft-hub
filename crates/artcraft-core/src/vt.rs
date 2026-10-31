@@ -91,16 +91,47 @@ pub struct VtResult {
     pub checked_at: i64,
     pub source: String,
     pub detail: String,
+    /// The download URL scanned when `source == "url-scan"`. Entries written by
+    /// older versions do not have it and fall back to the release plan's URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
 }
 
 impl VtResult {
     pub fn permalink(&self) -> String {
-        format!("https://www.virustotal.com/gui/file/{}", self.sha256)
+        self.permalink_with(None)
+    }
+
+    /// Returns the best VirusTotal link for this result. URL-scan verdicts use
+    /// the URL analysis page because VirusTotal often has no file object for
+    /// them; file reports keep the file page. `fallback_url` supplies the
+    /// scanned URL for old cache entries that predate the `url` field.
+    pub fn permalink_with(&self, fallback_url: Option<&str>) -> String {
+        let scanned = if self.source == "url-scan" {
+            self.url.as_deref().or(fallback_url)
+        } else {
+            None
+        };
+        match scanned {
+            Some(url) => url_report_permalink(url),
+            None => file_report_permalink(&self.sha256),
+        }
     }
 
     fn is_fresh(&self, now: i64, days: u64) -> bool {
         now.saturating_sub(self.checked_at) < (days as i64) * 86_400
     }
+}
+
+/// Link to the file analysis, keyed by SHA-256.
+pub fn file_report_permalink(sha256: &str) -> String {
+    format!("https://www.virustotal.com/gui/file/{sha256}")
+}
+
+/// Link to the URL analysis, keyed by the base64url encoding of the URL.
+pub fn url_report_permalink(url: &str) -> String {
+    let id = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(url.as_bytes());
+    format!("https://www.virustotal.com/gui/url/{id}")
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -178,13 +209,24 @@ impl VtClient {
 
         if let Some(cached) = self.cache.entries.get(&sha256) {
             if cached.is_fresh(now_unix(), self.cfg.cache_days) {
+                let mut cached = cached.clone();
+                // Old URL-scan entries did not store the scanned URL; backfill
+                // it so their permalink points at the URL report.
+                if cached.source == "url-scan"
+                    && cached.url.is_none()
+                    && !download_url.is_empty()
+                {
+                    cached.url = Some(download_url.to_string());
+                    self.cache.entries.insert(sha256.clone(), cached.clone());
+                    let _ = self.cache.save(&self.paths);
+                }
                 report(&format!(
                     "VirusTotal: cached result ({} · {} of {} engines)",
                     cached.verdict.label(),
                     cached.stats.bad(),
                     cached.stats.total()
                 ));
-                return Ok(cached.clone());
+                return Ok(cached);
             }
         }
 
@@ -264,6 +306,7 @@ impl VtClient {
                     stats.bad(),
                     stats.total()
                 ),
+                url: Some(download_url.to_string()),
             };
             return self.finish(result);
         }
@@ -280,6 +323,7 @@ impl VtClient {
                         "VirusTotal checked exactly this file: 0 of {} engines report anything",
                         stats.total()
                     ),
+                    url: Some(download_url.to_string()),
                 };
                 self.finish(result)
             }
@@ -299,6 +343,7 @@ impl VtClient {
                         detail: "VirusTotal could not confirm the content; \
                                  continuing because allow_unknown is set"
                             .into(),
+                        url: Some(download_url.to_string()),
                     };
                     self.finish(result)
                 } else {
@@ -358,6 +403,7 @@ impl VtClient {
                         stats.bad(),
                         stats.total()
                     ),
+                    url: None,
                 }))
             }
             404 => Ok(None),
@@ -529,6 +575,7 @@ mod tests {
                 checked_at: 100,
                 source: "test".into(),
                 detail: String::new(),
+                url: None,
             },
         );
         cache.save(&paths).unwrap();
@@ -536,5 +583,65 @@ mod tests {
         assert_eq!(loaded.entries.len(), 1);
         loaded.prune(100 + 8 * 86_400, 7);
         assert!(loaded.entries.is_empty());
+    }
+
+    fn result(source: &str, url: Option<&str>) -> VtResult {
+        VtResult {
+            sha256: "a".repeat(64),
+            verdict: Verdict::Clean,
+            stats: Stats::default(),
+            checked_at: 100,
+            source: source.into(),
+            detail: String::new(),
+            url: url.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn file_reports_link_to_the_sha256_page() {
+        let result = result("file-report", None);
+        assert_eq!(
+            result.permalink(),
+            format!("https://www.virustotal.com/gui/file/{}", "a".repeat(64))
+        );
+    }
+
+    #[test]
+    fn url_scans_link_to_the_url_analysis() {
+        let asset = "https://github.com/storytold/filmcraft/releases/download/v0.15.0/filmcraft-0.15.0-linux-x86_64.tar.gz";
+        let result = result("url-scan", Some(asset));
+        assert_eq!(result.permalink(), url_report_permalink(asset));
+        assert!(result.permalink().contains("/gui/url/"));
+        assert!(!result.permalink().contains('='));
+    }
+
+    #[test]
+    fn old_url_scan_cache_entries_use_the_plan_url() {
+        let asset = "https://github.com/storytold/filmcraft/releases/download/v0.15.0/filmcraft-0.15.0-linux-x86_64.tar.gz";
+        let result = result("url-scan", None);
+        assert_eq!(
+            result.permalink_with(Some(asset)),
+            url_report_permalink(asset)
+        );
+        // Without a fallback there is nothing better than the file page.
+        assert!(result.permalink_with(None).contains("/gui/file/"));
+    }
+
+    #[test]
+    fn old_cache_entries_load_without_the_url_field() {
+        let json = serde_json::json!({
+            "entries": {
+                "a".repeat(64): {
+                    "sha256": "a".repeat(64),
+                    "verdict": "clean",
+                    "stats": { "harmless": 1 },
+                    "checked_at": 100,
+                    "source": "url-scan",
+                    "detail": ""
+                }
+            }
+        });
+        let cache: VtCache = serde_json::from_value(json).unwrap();
+        assert!(cache.entries[&"a".repeat(64)].url.is_none());
     }
 }
