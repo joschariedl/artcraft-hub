@@ -438,30 +438,10 @@ impl HubApp {
             let agent = artcraft_core::net::agent(Duration::from_secs(30));
             for app in SUITE.iter() {
                 let bundle = app.bundle_id();
-                if let Some(path) = local_icon(&paths, app.id, &bundle) {
-                    if let Some(image) = load_image(&path) {
-                        let _ = tx.send(Msg::Icon {
-                            id: app.id.to_string(),
-                            image,
-                        });
-                        ctx.request_repaint();
-                        continue;
-                    }
-                }
-                let tag = state
-                    .releases
-                    .get(app.id)
-                    .map(|r| r.plan.tag.clone())
-                    .unwrap_or_else(|| "HEAD".to_string());
                 let mut sent = false;
-                for url in github::icon_urls(app, &tag) {
-                    let Ok(bytes) = artcraft_core::download::fetch_bytes(
-                        &agent,
-                        &url,
-                        4 * 1024 * 1024,
-                    ) else {
-                        continue;
-                    };
+                // Prefer the padding-free WebP icons from getartcraft.com.
+                let webp_url = format!("https://getartcraft.com/images/apps/{}/icon.webp", app.id);
+                if let Ok(bytes) = artcraft_core::download::fetch_bytes(&agent, &webp_url, 4 * 1024 * 1024) {
                     if let Ok(img) = image::load_from_memory(&bytes) {
                         let cache = paths.icon_cache_dir().join(format!("{}.png", app.id));
                         let _ = std::fs::create_dir_all(paths.icon_cache_dir());
@@ -472,7 +452,46 @@ impl HubApp {
                         });
                         ctx.request_repaint();
                         sent = true;
-                        break;
+                    }
+                }
+                if !sent {
+                    if let Some(path) = local_icon(&paths, app.id, &bundle) {
+                        if let Some(image) = load_image(&path) {
+                            let _ = tx.send(Msg::Icon {
+                                id: app.id.to_string(),
+                                image,
+                            });
+                            ctx.request_repaint();
+                            sent = true;
+                        }
+                    }
+                }
+                if !sent {
+                    let tag = state
+                        .releases
+                        .get(app.id)
+                        .map(|r| r.plan.tag.clone())
+                        .unwrap_or_else(|| "HEAD".to_string());
+                    for url in github::icon_urls(app, &tag) {
+                        let Ok(bytes) = artcraft_core::download::fetch_bytes(
+                            &agent,
+                            &url,
+                            4 * 1024 * 1024,
+                        ) else {
+                            continue;
+                        };
+                        if let Ok(img) = image::load_from_memory(&bytes) {
+                            let cache = paths.icon_cache_dir().join(format!("{}.png", app.id));
+                            let _ = std::fs::create_dir_all(paths.icon_cache_dir());
+                            let _ = img.save_with_format(&cache, image::ImageFormat::Png);
+                            let _ = tx.send(Msg::Icon {
+                                id: app.id.to_string(),
+                                image: to_color_image(&img),
+                            });
+                            ctx.request_repaint();
+                            sent = true;
+                            break;
+                        }
                     }
                 }
                 if !sent {
@@ -816,13 +835,9 @@ impl HubApp {
     fn icon(&self, ui: &mut egui::Ui, status: &AppStatus, size: f32) {
         if let Some(texture) = self.icons.get(&status.id) {
             let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
-            let painter = ui.painter_at(rect);
-            let bg = Color32::from_rgb(status.color[0], status.color[1], status.color[2]).linear_multiply(0.18);
-            painter.rect_filled(rect, CornerRadius::same((size / 5.0) as u8), bg);
-            let inner = rect.shrink(size * 0.10);
-            painter.image(
+            ui.painter_at(rect).image(
                 texture.id(),
-                inner,
+                egui::Rect::from_min_size(egui::Pos2::ZERO, rect.size()),
                 egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
                 Color32::WHITE,
             );
