@@ -595,7 +595,7 @@ impl HubApp {
                     .stroke(Stroke::new(1.0, BORDER)),
             )
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_centered(|ui| {
                     if self.busy.is_some() {
                         if let Some((received, total)) = self.download {
                             let fraction = total
@@ -637,7 +637,10 @@ impl HubApp {
                                 .color(MUTED),
                         );
                         if ui
-                            .selectable_label(self.show_log, "Log")
+                            .selectable_label(
+                                self.show_log,
+                                RichText::new("Log").small().color(TEXT),
+                            )
                             .clicked()
                         {
                             self.show_log = !self.show_log;
