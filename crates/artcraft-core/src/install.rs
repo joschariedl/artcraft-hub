@@ -469,10 +469,18 @@ fn copy_icons(app: &AppDef, version_dir: &Path, paths: &Paths) -> Result<()> {
                 continue;
             };
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or_default();
-            // Only PNGs are copied: the tarball's SVGs are huge traced
-            // illustrations that render poorly (or not at all) at menu sizes.
-            // High-resolution PNGs are installed separately via install_1024_icons.
-            if !name.starts_with(&bundle) || ext != "png" {
+            if !name.starts_with(&bundle) {
+                continue;
+            }
+            // SVGs are only copied when they are small, clean vectors. The
+            // upstream repos ship 300 KB - 1 MB traced illustrations that
+            // render poorly in menus; those are skipped in favour of the PNGs.
+            if ext == "svg" {
+                let Ok(meta) = fs::metadata(&path) else { continue; };
+                if meta.len() > 50 * 1024 {
+                    continue;
+                }
+            } else if ext != "png" {
                 continue;
             }
             let target_dir = paths.icons_dir.join("hicolor").join(size_name).join("apps");
