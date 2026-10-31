@@ -4,7 +4,7 @@
 //! verified against the release's `SHA256SUMS.txt` and VirusTotal before a
 //! single byte is extracted.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, Receiver, Sender};
 use std::time::{Duration, Instant};
@@ -14,13 +14,11 @@ use egui::{
     Align, Align2, Color32, CornerRadius, FontId, Layout, Margin, RichText, Sense, Stroke, Vec2,
 };
 
-use artcraft_core::catalog::{self, SUITE};
+use artcraft_core::catalog::{self};
 use artcraft_core::config::Config;
-use artcraft_core::github;
 use artcraft_core::ops::{self, AppStatus};
 use artcraft_core::paths::Paths;
 use artcraft_core::progress::Progress;
-use artcraft_core::state::State;
 
 const BG: Color32 = Color32::from_rgb(13, 17, 24);
 const PANEL: Color32 = Color32::from_rgb(18, 23, 32);
@@ -49,8 +47,7 @@ fn main() -> eframe::Result<()> {
                 );
                 return Ok(());
             }
-            other => {
-                eprintln!("Unknown argument: {other}\nUsage: artcraft-hub [-h|--help] [-V|--version]");
+            _ => {
                 std::process::exit(2);
             }
         }
@@ -100,8 +97,6 @@ enum Msg {
     Status(Vec<AppStatus>),
     Progress(Progress),
     Done { text: String, ok: bool },
-    Icon { id: String, image: egui::ColorImage },
-    IconFailed(String),
 }
 
 struct SettingsDraft {
@@ -144,8 +139,6 @@ struct HubApp {
     busy: Option<Busy>,
     tx: Sender<Msg>,
     rx: Receiver<Msg>,
-    icons: HashMap<String, egui::TextureHandle>,
-    icon_failed: HashSet<String>,
     icons_started: bool,
     log: Vec<String>,
     download: Option<(u64, Option<u64>)>,
@@ -213,8 +206,6 @@ impl HubApp {
             busy: None,
             tx,
             rx,
-            icons: HashMap::new(),
-            icon_failed: HashSet::new(),
             icons_started: false,
             log: Vec::new(),
             download: None,
@@ -429,79 +420,6 @@ impl HubApp {
         });
     }
 
-    fn spawn_icons(&self, ctx: &egui::Context) {
-        let tx = self.tx.clone();
-        let paths = self.paths.clone();
-        let ctx = ctx.clone();
-        std::thread::spawn(move || {
-            let state = State::load(&paths);
-            let agent = artcraft_core::net::agent(Duration::from_secs(30));
-            for app in SUITE.iter() {
-                let bundle = app.bundle_id();
-                let mut sent = false;
-                // Prefer the padding-free WebP icons from getartcraft.com.
-                let webp_url = format!("https://getartcraft.com/images/apps/{}/icon.webp", app.id);
-                if let Ok(bytes) = artcraft_core::download::fetch_bytes(&agent, &webp_url, 4 * 1024 * 1024) {
-                    if let Ok(img) = image::load_from_memory(&bytes) {
-                        let cache = paths.icon_cache_dir().join(format!("{}.png", app.id));
-                        let _ = std::fs::create_dir_all(paths.icon_cache_dir());
-                        let _ = img.save_with_format(&cache, image::ImageFormat::Png);
-                        let _ = tx.send(Msg::Icon {
-                            id: app.id.to_string(),
-                            image: to_color_image(&img),
-                        });
-                        ctx.request_repaint();
-                        sent = true;
-                    }
-                }
-                if !sent {
-                    if let Some(path) = local_icon(&paths, app.id, &bundle) {
-                        if let Some(image) = load_image(&path) {
-                            let _ = tx.send(Msg::Icon {
-                                id: app.id.to_string(),
-                                image,
-                            });
-                            ctx.request_repaint();
-                            sent = true;
-                        }
-                    }
-                }
-                if !sent {
-                    let tag = state
-                        .releases
-                        .get(app.id)
-                        .map(|r| r.plan.tag.clone())
-                        .unwrap_or_else(|| "HEAD".to_string());
-                    for url in github::icon_urls(app, &tag) {
-                        let Ok(bytes) = artcraft_core::download::fetch_bytes(
-                            &agent,
-                            &url,
-                            4 * 1024 * 1024,
-                        ) else {
-                            continue;
-                        };
-                        if let Ok(img) = image::load_from_memory(&bytes) {
-                            let cache = paths.icon_cache_dir().join(format!("{}.png", app.id));
-                            let _ = std::fs::create_dir_all(paths.icon_cache_dir());
-                            let _ = img.save_with_format(&cache, image::ImageFormat::Png);
-                            let _ = tx.send(Msg::Icon {
-                                id: app.id.to_string(),
-                                image: to_color_image(&img),
-                            });
-                            ctx.request_repaint();
-                            sent = true;
-                            break;
-                        }
-                    }
-                }
-                if !sent {
-                    let _ = tx.send(Msg::IconFailed(app.id.to_string()));
-                    ctx.request_repaint();
-                }
-            }
-        });
-    }
-
     // -----------------------------------------------------------------------
     // Message handling
     // -----------------------------------------------------------------------
@@ -551,27 +469,11 @@ impl HubApp {
                     self.toast(text, ok);
                     needs_check = true;
                 }
-                Msg::Icon { id, image } => {
-                    let texture = ctx.load_texture(
-                        format!("icon-{id}"),
-                        image,
-                        egui::TextureOptions::LINEAR,
-                    );
-                    self.icons.insert(id.clone(), texture);
-                }
-                Msg::IconFailed(id) => {
-                    self.icon_failed.insert(id);
-                }
+                // (icons are loaded synchronously from embedded data)
             }
         }
         if needs_check {
             self.spawn_check(ctx, false);
-        }
-        if self.icons.len() > 0 && self.statuses.len() > 0 {
-            let ikeys: Vec<&String> = self.icons.keys().collect();
-            let sids: Vec<&String> = self.statuses.iter().map(|s| &s.id).collect();
-            if ikeys != sids {
-            }
         }
     }
 
@@ -839,10 +741,35 @@ impl HubApp {
     }
 
     fn icon(&self, ui: &mut egui::Ui, status: &AppStatus, size: f32) {
-        if !self.icons.contains_key(&status.id) {
-            eprintln!("ICONMISS {} have={:?}", status.id, self.icons.keys().collect::<Vec<_>>());
-        }
-        if let Some(texture) = self.icons.get(&status.id) {
+        // Load from a process-global cache so textures survive any reset.
+        static ICON_CACHE: std::sync::Mutex<Option<std::collections::HashMap<String, egui::TextureHandle>>> =
+            std::sync::Mutex::new(None);
+        let texture = {
+            let mut cache = ICON_CACHE.lock().unwrap();
+            if cache.is_none() {
+                *cache = Some(std::collections::HashMap::new());
+            }
+            let cache = cache.as_mut().unwrap();
+            if !cache.contains_key(&status.id) {
+                // Prefer the embedded, padding-free icons (always available).
+                let img = if let Some(bytes) = embedded_icon(&status.id) {
+                    image::load_from_memory(bytes).ok().map(|img| to_color_image(&img))
+                } else {
+                    let bundle = catalog::by_id(&status.id).map(|a| a.bundle_id()).unwrap_or_default();
+                    local_icon(&self.paths, &status.id, &bundle).and_then(|p| load_image(&p))
+                };
+                if let Some(image) = img {
+                    let tex = ui.ctx().load_texture(
+                        format!("icon-{}", status.id),
+                        image,
+                        egui::TextureOptions::LINEAR,
+                    );
+                    cache.insert(status.id.clone(), tex);
+                }
+            }
+            cache.get(&status.id).cloned()
+        };
+        if let Some(texture) = texture {
             let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
             ui.painter().image(
                 texture.id(),
@@ -1556,39 +1483,9 @@ impl eframe::App for HubApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.drain(&ctx);
-        eprintln!("UISTART icons={} statuses={}", self.icons.len(), self.statuses.len());
         if !self.icons_started {
             self.icons_started = true;
-            self.spawn_icons(&ctx);
             self.spawn_check(&ctx, false);
-        }
-
-        // Ensure icons are available synchronously from disk (fallback).
-        let pending: Vec<(String, String)> = self
-            .statuses
-            .iter()
-            .filter(|s| !self.icons.contains_key(&s.id))
-            .map(|s| {
-                let bundle = catalog::by_id(&s.id).map(|a| a.bundle_id()).unwrap_or_default();
-                (s.id.clone(), bundle)
-            })
-            .collect();
-        for (id, bundle) in pending {
-            if let Some(path) = local_icon(&self.paths, &id, &bundle) {
-                if let Some(image) = load_image(&path) {
-                    let texture = ctx.load_texture(
-                        format!("icon-{}", id),
-                        image,
-                        egui::TextureOptions::LINEAR,
-                    );
-                    self.icons.insert(id.clone(), texture);
-                    eprintln!("DEBUG preloaded icon for {}", id);
-                } else {
-                    eprintln!("DEBUG load_image failed for {}", id);
-                }
-            } else {
-                eprintln!("DEBUG local_icon None for {}", id);
-            }
         }
 
         self.top_bar(ui);
@@ -1600,7 +1497,6 @@ impl eframe::App for HubApp {
         self.uninstall_window(&ctx);
         self.log_window(&ctx);
         self.toast_layer(&ctx);
-        eprintln!("UIEND icons={} statuses={}", self.icons.len(), self.statuses.len());
     }
 }
 
@@ -1690,6 +1586,27 @@ fn to_color_image(image: &image::DynamicImage) -> egui::ColorImage {
     let image = image.thumbnail(256, 256).to_rgba8();
     let size = [image.width() as usize, image.height() as usize];
     egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw())
+}
+
+/// Returns the icon bytes embedded in the binary (padding-free WebP, converted
+/// to PNG at build time). These are always available, even offline.
+fn embedded_icon(id: &str) -> Option<&'static [u8]> {
+    match id {
+        "photocraft" => Some(include_bytes!("../../../assets/icons/photocraft.png")),
+        "vectorcraft" => Some(include_bytes!("../../../assets/icons/vectorcraft.png")),
+        "filmcraft" => Some(include_bytes!("../../../assets/icons/filmcraft.png")),
+        "lightcraft" => Some(include_bytes!("../../../assets/icons/lightcraft.png")),
+        "pdfcraft" => Some(include_bytes!("../../../assets/icons/pdfcraft.png")),
+        "effectcraft" => Some(include_bytes!("../../../assets/icons/effectcraft.png")),
+        "designcraft" => Some(include_bytes!("../../../assets/icons/designcraft.png")),
+        "figcraft" => Some(include_bytes!("../../../assets/icons/figcraft.png")),
+        "wordcraft" => Some(include_bytes!("../../../assets/icons/wordcraft.png")),
+        "soundcraft" => Some(include_bytes!("../../../assets/icons/soundcraft.png")),
+        "deckcraft" => Some(include_bytes!("../../../assets/icons/deckcraft.png")),
+        "cadcraft" => Some(include_bytes!("../../../assets/icons/cadcraft.png")),
+        "gridcraft" => Some(include_bytes!("../../../assets/icons/gridcraft.png")),
+        _ => None,
+    }
 }
 
 /// Finds an icon that is already on disk: installed hicolor theme, the app's
