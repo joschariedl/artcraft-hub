@@ -557,7 +557,7 @@ impl HubApp {
                         image,
                         egui::TextureOptions::LINEAR,
                     );
-                    self.icons.insert(id, texture);
+                    self.icons.insert(id.clone(), texture);
                 }
                 Msg::IconFailed(id) => {
                     self.icon_failed.insert(id);
@@ -566,6 +566,12 @@ impl HubApp {
         }
         if needs_check {
             self.spawn_check(ctx, false);
+        }
+        if self.icons.len() > 0 && self.statuses.len() > 0 {
+            let ikeys: Vec<&String> = self.icons.keys().collect();
+            let sids: Vec<&String> = self.statuses.iter().map(|s| &s.id).collect();
+            if ikeys != sids {
+            }
         }
     }
 
@@ -833,11 +839,14 @@ impl HubApp {
     }
 
     fn icon(&self, ui: &mut egui::Ui, status: &AppStatus, size: f32) {
+        if !self.icons.contains_key(&status.id) {
+            eprintln!("ICONMISS {} have={:?}", status.id, self.icons.keys().collect::<Vec<_>>());
+        }
         if let Some(texture) = self.icons.get(&status.id) {
             let (rect, _) = ui.allocate_exact_size(Vec2::splat(size), Sense::hover());
-            ui.painter_at(rect).image(
+            ui.painter().image(
                 texture.id(),
-                egui::Rect::from_min_size(egui::Pos2::ZERO, rect.size()),
+                rect,
                 egui::Rect::from_min_max(egui::Pos2::ZERO, egui::Pos2::new(1.0, 1.0)),
                 Color32::WHITE,
             );
@@ -1547,10 +1556,39 @@ impl eframe::App for HubApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.drain(&ctx);
+        eprintln!("UISTART icons={} statuses={}", self.icons.len(), self.statuses.len());
         if !self.icons_started {
             self.icons_started = true;
             self.spawn_icons(&ctx);
             self.spawn_check(&ctx, false);
+        }
+
+        // Ensure icons are available synchronously from disk (fallback).
+        let pending: Vec<(String, String)> = self
+            .statuses
+            .iter()
+            .filter(|s| !self.icons.contains_key(&s.id))
+            .map(|s| {
+                let bundle = catalog::by_id(&s.id).map(|a| a.bundle_id()).unwrap_or_default();
+                (s.id.clone(), bundle)
+            })
+            .collect();
+        for (id, bundle) in pending {
+            if let Some(path) = local_icon(&self.paths, &id, &bundle) {
+                if let Some(image) = load_image(&path) {
+                    let texture = ctx.load_texture(
+                        format!("icon-{}", id),
+                        image,
+                        egui::TextureOptions::LINEAR,
+                    );
+                    self.icons.insert(id.clone(), texture);
+                    eprintln!("DEBUG preloaded icon for {}", id);
+                } else {
+                    eprintln!("DEBUG load_image failed for {}", id);
+                }
+            } else {
+                eprintln!("DEBUG local_icon None for {}", id);
+            }
         }
 
         self.top_bar(ui);
@@ -1562,6 +1600,7 @@ impl eframe::App for HubApp {
         self.uninstall_window(&ctx);
         self.log_window(&ctx);
         self.toast_layer(&ctx);
+        eprintln!("UIEND icons={} statuses={}", self.icons.len(), self.statuses.len());
     }
 }
 
@@ -1656,6 +1695,11 @@ fn to_color_image(image: &image::DynamicImage) -> egui::ColorImage {
 /// Finds an icon that is already on disk: installed hicolor theme, the app's
 /// version directory, or the hub's own cache.
 fn local_icon(paths: &Paths, id: &str, bundle: &str) -> Option<PathBuf> {
+    // Prefer the padding-free cached WebP (saved as PNG) over the hicolor PNGs.
+    let cached = paths.icon_cache_dir().join(format!("{id}.png"));
+    if cached.is_file() {
+        return Some(cached);
+    }
     let sizes = ["1024x1024", "512x512", "256x256", "128x128", "64x64"];
     for size in sizes {
         let candidate = paths
@@ -1667,10 +1711,6 @@ fn local_icon(paths: &Paths, id: &str, bundle: &str) -> Option<PathBuf> {
         if candidate.is_file() {
             return Some(candidate);
         }
-    }
-    let cached = paths.icon_cache_dir().join(format!("{id}.png"));
-    if cached.is_file() {
-        return Some(cached);
     }
     let root = paths.app_dir(id);
     let mut versions: Vec<PathBuf> = std::fs::read_dir(&root)
