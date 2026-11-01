@@ -69,39 +69,17 @@ fn set_palette(theme: &Theme) {
     let _ = PALETTE.set(Palette::from_theme(theme));
 }
 
-fn bg() -> Color32 {
-    palette().bg
-}
-fn panel() -> Color32 {
-    palette().panel
-}
-fn card() -> Color32 {
-    palette().card
-}
-fn card_hover() -> Color32 {
-    palette().card_hover
-}
-fn border() -> Color32 {
-    palette().border
-}
-fn text() -> Color32 {
-    palette().text
-}
-fn muted() -> Color32 {
-    palette().muted
-}
-fn accent() -> Color32 {
-    palette().accent
-}
-fn ok() -> Color32 {
-    palette().ok
-}
-fn warn() -> Color32 {
-    palette().warn
-}
-fn bad() -> Color32 {
-    palette().bad
-}
+fn bg() -> Color32 { palette().bg }
+fn panel() -> Color32 { palette().panel }
+fn card() -> Color32 { palette().card }
+fn card_hover() -> Color32 { palette().card_hover }
+fn border() -> Color32 { palette().border }
+fn text() -> Color32 { palette().text }
+fn muted() -> Color32 { palette().muted }
+fn accent() -> Color32 { palette().accent }
+fn ok() -> Color32 { palette().ok }
+fn warn() -> Color32 { palette().warn }
+fn bad() -> Color32 { palette().bad }
 
 fn main() -> eframe::Result<()> {
     let mut args = std::env::args().skip(1);
@@ -135,7 +113,7 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "artcraft-hub",
         options,
-        Box::new(|cc| Ok(Box::new(HubApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(HubApp::new(cc)))), 
     )
 }
 
@@ -1111,6 +1089,19 @@ impl HubApp {
                 && ui
                     .add_enabled(
                         !busy,
+                        egui::Button::new(RichText::new("Remove").color(bad()))
+                            .corner_radius(CornerRadius::same(8))
+                            .min_size(Vec2::new(120.0, 34.0)),
+                    )
+                    .clicked()
+            {
+                self.confirm_uninstall = Some(status.id.clone());
+            }
+
+            if status.installed_version.is_some()
+                && ui
+                    .add_enabled(
+                        !busy,
                         egui::Button::new(
                             RichText::new(if status.pinned { "Unpin" } else { "Pin" }).color(text()),
                         )
@@ -1205,7 +1196,7 @@ impl HubApp {
                         }
                     } else if let Some(tag) = &status.latest_tag {
                         match ops::skip(&id, Some(tag), &self.paths) {
-                            Ok(_) => self.toast(format!("{} skipped.", tag), true),
+                            Ok(_) => self.toast(format!("{tag} skipped."), true),
                             Err(error) => self.toast(format!("Skip failed: {error}"), false),
                         }
                     }
@@ -1808,6 +1799,7 @@ impl eframe::App for HubApp {
         }
 
         // Keyboard shortcuts.
+        let wants_keyboard = ctx.egui_wants_keyboard_input();
         let mut refresh = false;
         let mut toggle_updates = false;
         let mut focus_search = false;
@@ -1828,7 +1820,7 @@ impl eframe::App for HubApp {
             if i.key_pressed(egui::Key::Escape) {
                 close_windows = true;
             }
-            if !i.modifiers.ctrl && !i.modifiers.alt && !ctx.egui_wants_keyboard_input() {
+            if !i.modifiers.ctrl && !i.modifiers.alt && !wants_keyboard {
                 if i.key_pressed(egui::Key::Num1) {
                     filter_set = Some(Filter::All);
                 }
