@@ -206,7 +206,8 @@ Or via the application menu ("ArtCraft Hub"). The UI shows all 13 apps with icon
 version and the latest available version.
 
 - **Install** – downloads, verifies (SHA-256 + VirusTotal) and installs the current version.
-- **Update** – appears once a newer version is available; per app or all at once.
+- **Update** – appears once a newer version is available; per app or all at once. An upward arrow
+  on the right edge of the row marks an app with a pending update.
 - **Remove** – removes the program, symlinks, desktop file and icons of the app.
 - **Refresh** – forces a network query instead of the 30-minute cache.
 - **Settings** – VirusTotal key, GitHub token, check interval, icon options, language.

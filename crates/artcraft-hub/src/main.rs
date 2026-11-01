@@ -851,11 +851,7 @@ impl HubApp {
                                             Layout::right_to_left(Align::Center),
                                             |ui| {
                                                 if status.update_available {
-                                                    ui.label(
-                                                        RichText::new("●")
-                                                            .color(warn())
-                                                            .strong(),
-                                                    );
+                                                    update_glyph(ui);
                                                 } else if status.installed_version.is_some()
                                                 {
                                                     status_glyph(ui, true);
@@ -1613,10 +1609,10 @@ impl HubApp {
                         ui.vertical(|ui| {
                             ui.label(RichText::new(&status.name).strong());
                             ui.label(
-                                RichText::new(ops::version_label(
+                                RichText::new(gui_text(ops::version_label(
                                     status.installed_version.as_deref(),
                                     status.latest_version.as_deref(),
-                                ))
+                                )))
                                 .small()
                                 .color(muted()),
                             );
@@ -1896,6 +1892,19 @@ fn check_line(ui: &mut egui::Ui, ok: bool, text: &str) {
     });
 }
 
+/// Small upward arrow for "update available". Drawn with the painter because the
+/// bundled egui fonts do not contain U+25CF (●) and render it as a tofu box.
+fn update_glyph(ui: &mut egui::Ui) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
+    let painter = ui.painter_at(rect);
+    let color = warn();
+    let stroke = Stroke::new(2.0, color);
+    let c = rect.center();
+    painter.line_segment([c + Vec2::new(0.0, 5.0), c + Vec2::new(0.0, -5.0)], stroke);
+    painter.line_segment([c + Vec2::new(-4.0, -1.0), c + Vec2::new(0.0, -5.0)], stroke);
+    painter.line_segment([c + Vec2::new(4.0, -1.0), c + Vec2::new(0.0, -5.0)], stroke);
+}
+
 fn status_glyph(ui: &mut egui::Ui, ok: bool) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
     let painter = ui.painter_at(rect);
@@ -1954,6 +1963,12 @@ fn side_status(status: &AppStatus) -> (String, Color32) {
     } else {
         ("Unknown".into(), muted())
     }
+}
+
+/// Replaces glyphs that egui's bundled proportional fonts lack. U+2192 (→) is
+/// only present in the monospace fallback, so it renders as a box in labels.
+fn gui_text(text: String) -> String {
+    text.replace('→', "->")
 }
 
 fn truncate(text: &str, max: usize) -> String {

@@ -198,6 +198,10 @@ Uninstall: `./scripts/uninstall.sh [--apps] [--purge]`.
 - A single extra `}` or a missing function in `ArtcraftPanel.qml` breaks the whole panel at load
   time; the bar widget still renders because it is a separate component.
 - FigCraft (and others) show "no release" only on GitHub rate limit (60 req/h without token).
+- **egui fonts are incomplete.** The bundled proportional stack (Ubuntu-Light, egui-icons,
+  NotoEmoji, emoji-icon-font) has no glyph for `●` (U+25CF) or `→` (U+2192), so they render as
+  tofu boxes in labels. Draw such symbols with the painter (`update_glyph`, `status_glyph`) or use
+  ASCII (`gui_text` rewrites `→` to `->` for egui only). Covered: `⚠`, `·`, `–`, `…`, `≠`.
 - The icon cache (`~/.cache/artcraft-hub/icons/`) is populated from embedded data; no network needed.
 - `update-desktop-database` and `gtk-update-icon-cache` should be installed for menu integration.
 - Wayland: GUI uses eframe/glow; set `LIBGL_ALWAYS_SOFTWARE=1` if GL drivers missing.
@@ -219,3 +223,5 @@ Uninstall: `./scripts/uninstall.sh [--apps] [--purge]`.
 - Network robustness: retries/backoff, conditional requests, resumable downloads, parallel checks.
 - Stronger trust anchors: signed manifest, GitHub attestations, configurable GPG keyring.
 - Omarchy theme integration, GUI filters and keyboard shortcuts, plugin schema v2.
+- Bugfix: the update-available marker in the app list no longer renders as a tofu box. It is now
+  a painter-drawn upward arrow; `→` in the update dialog is shown as `->` inside egui.
