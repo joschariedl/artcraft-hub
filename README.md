@@ -17,6 +17,8 @@ All user-facing text is in English.
 
 ---
 
+![ArtCraft Hub](assets/screenshot.png)
+
 ## Contents
 
 - [The apps](#the-apps)
