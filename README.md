@@ -83,6 +83,25 @@ The release packages are 40–130 MB, but the public VirusTotal API only accepts
 VirusTotal fetches the file itself and computes the SHA-256 of the content. The hub compares
 that hash with the expected one, so a redirected or substituted file cannot slip through.
 
+### Transactional installs and rollback
+
+Installs are transactional: a previous version directory is moved aside, the new tree is
+activated, and any failure restores the previous version. The hub keeps the active plus
+`keep_versions - 1` older versions on disk, so `artcraftctl rollback <id>` (or the GUI button)
+can switch back to a previous version without re-downloading; rollback auto-pins that version.
+Apps can be pinned (`pin`/`unpin`) to disable automatic updates, and a release can be skipped
+(`skip`/`unskip`).
+
+### Optional trust anchors
+
+Beyond checksums, the hub can verify additional anchors (all optional, configurable in
+settings; missing anchors are a warning unless the corresponding `require_*` flag is set):
+
+- **Signed `SHA256SUMS.txt`** – a detached `.sig`/`.asc` over the checksum list, verified
+  with GPG (optionally against a dedicated keyring and a trusted-fingerprint list).
+- **GitHub/Sigstore provenance attestations** – verified with `gh attestation verify`.
+- **GPG signature of the archive** – verified when a `.sig`/`.asc` is published next to it.
+
 ### Fail-closed
 
 - Without a VirusTotal key, installs and updates are **locked**. The GUI and the bar-plugin popup
@@ -190,6 +209,8 @@ version and the latest available version.
 - **Refresh** – forces a network query instead of the 30-minute cache.
 - **Settings** – VirusTotal key, GitHub token, check interval, icon options, language.
 
+- **Filters & search** – filter by All/Updates/Installed/Not installed, search box, keyboard shortcuts (F5 refresh, Ctrl+F search, Ctrl+U updates, 1–4 filters, Esc close).
+- **Theme** – follows the active Omarchy theme automatically (configurable).
 During a download the GUI shows progress and the current verification stage. Errors are
 explained in plain text (missing key, hash conflict, VirusTotal finding, no release, …).
 
@@ -201,9 +222,16 @@ artcraftctl status               # compact status (cache, ~0 s)
 artcraftctl status --refresh     # status with network query
 artcraftctl check                # look for updates
 artcraftctl install gridcraft    # install one app
+artcraftctl install gridcraft --version v0.13.0   # install and pin a specific version
 artcraftctl upgrade --all        # update all apps
 artcraftctl upgrade photocraft   # update one app
 artcraftctl uninstall deckcraft  # remove one app
+artcraftctl pin gridcraft        # pin to the current version
+artcraftctl unpin gridcraft      # allow updates again
+artcraftctl skip gridcraft       # skip the latest release
+artcraftctl unskip gridcraft     # stop skipping
+artcraftctl rollback gridcraft   # roll back to the previous version
+artcraftctl completions bash     # print shell completions
 artcraftctl doctor               # check environment and keys
 artcraftctl config --show        # show current configuration
 ```
@@ -285,6 +313,17 @@ in `~/.local/bin` points at the active one. Uninstalling removes all versions of
 | `require_sha256sums` | `true` | Reject releases without `SHA256SUMS.txt` |
 | `install_1024_icons` | `true` | Also install the 1024 px PNG from the app repository |
 | `language` | `en` | UI language |
+| `keep_versions` | `2` | Versions kept per app (active + rollback targets) |
+| `parallel_checks` | `4` | Parallel release lookups during status checks |
+| `network_retries` | `3` | Network attempts including the first one |
+| `follow_omarchy_theme` | `true` | Follow the active Omarchy theme in the GUI |
+| `verify_attestations` | `true` | Verify GitHub/Sigstore attestations when present |
+| `require_attestations` | `false` | Fail when a release has no attestation |
+| `verify_signed_manifest` | `true` | Verify a detached signature over `SHA256SUMS.txt` |
+| `require_signed_manifest` | `false` | Fail when `SHA256SUMS.txt` is not signed |
+| `require_gpg_signature` | `false` | Fail when an archive has no GPG signature |
+| `gpg_keyring` | `""` | Dedicated GPG keyring (empty = default) |
+| `gpg_trusted_fingerprints` | `[]` | Trusted signer fingerprints (empty = any valid) |
 | `vt.min_interval_seconds` | `16` | Minimum spacing between VirusTotal requests |
 | `vt.cache_days` | `7` | Lifetime of a VirusTotal result |
 | `vt.poll_seconds` | `20` | Wait between status polls of a URL scan |

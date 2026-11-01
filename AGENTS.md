@@ -49,35 +49,48 @@ Key modules:
   - 13 apps in website order. pdfcraft has stem `printcraft`.
   - Bugfix: `icon_paths()` iterates `once(id).chain(stems)` so every app has its 1024 px icon path.
 - `config.rs` – `Config` (TOML, 0600). Fields: github_token, virustotal_api_key, metadata_cache_minutes,
-  check_interval_minutes, require_sha256sums, install_1024_icons, vt (VtConfig), language (default "en").
-  - `vt_key()`, `github_token()` resolve env fallbacks. `metadata_ttl_secs()`.
+  check_interval_minutes, require_sha256sums, install_1024_icons, keep_versions, parallel_checks,
+  network_retries, verify_attestations, require_attestations, verify_signed_manifest,
+  require_signed_manifest, require_gpg_signature, gpg_keyring, gpg_trusted_fingerprints,
+  follow_omarchy_theme, vt (VtConfig), language (default "en").
+  - `vt_key()`, `github_token()` resolve env fallbacks. `metadata_ttl_secs()`, `network_attempts()`,
+    `keeps_versions()`, `normalize()`.
 - `paths.rs` – `Paths::from_env()`. install_root `~/.local/opt/artcraft`, bin `~/.local/bin`,
   applications `~/.local/share/applications`, icons `~/.local/share/icons`, state `~/.local/state/artcraft-hub`,
-  cache `~/.cache/artcraft-hub`. `omarchy_plugin_dir()`.
-- `github.rs` – release discovery. `latest()` (GitHub API → feed fallback), `resolve()`, `plan_from_release()`,
-  `plan_from_parts()` (checksum rules), `select_asset()`, `fetch_sums()`, `parse_sha256sums()`,
-  `icon_urls()`, `valid_*` validators. Feed URL: `https://api.storyteller.ai/v1/craft_apps/release_info`.
+  cache `~/.cache/artcraft-hub`. `omarchy_plugin_dir()`, `lock_file()`, `omarchy_theme_file()`,
+  `omarchy_theme_name_file()`, `omarchy_current_dir()`.
+- `github.rs` – release discovery. `latest()`, `resolve()`, `resolve_conditional()` (ETag/Last-Modified),
+  `resolve_tag()`, `plan_from_release()`, `plan_from_parts()` (checksum rules), `select_asset()`,
+  `fetch_sums()`, `fetch_sums_bytes()`, `parse_sha256sums()`, `icon_urls()`, `valid_*` validators.
+  Feed URL: `https://api.storyteller.ai/v1/craft_apps/release_info`.
 - `vt.rs` – `VtClient`, `VtResult`, `Verdict`, `Stats`, `VtCache`. URL-scan flow: file_report → submit_url →
   poll → url_report → hash comparison. `invalidate()`, `new()`, `check()`. Rate limiting (16s), 7-day cache.
-  - `VtResult::permalink()` links to `/gui/file/<sha256>` for file reports and `/gui/url/<base64url>` for
-    URL-scan verdicts. URL-scan results store the scanned `url`; older cache entries are backfilled on the
-    next check and otherwise fall back to the release plan's asset URL in the GUI.
-- `download.rs` – `fetch()` (streaming download with SHA-256 check), `fetch_bytes()`, `has_checksum()`.
-- `install.rs` – `extract_archive()`, `checked_relative()`, `install_archive()`, `find_main_binary()`,
-  `write_desktop_file()`, `build_desktop_file()`, `quote_exec()`, `copy_icons()`, `copy_extras()`,
-  `install_highres_icon()`, `prune_old_versions()`, `uninstall()`, `verify_gpg_signature()`.
-  - TryExec is written **unquoted** (GLib treats quoted paths as unavailable).
-  - `copy_icons` copies only PNGs (SVGs are size-gated: <= 50 KB).
-- `ops.rs` – high-level ops shared by GUI and CLI: `check_all()`, `install()`, `install_with_plan()`,
+  - `VtResult::permalink()` / `permalink_with()` link to `/gui/file/<sha256>` and `/gui/url/<base64url>`.
+- `download.rs` – `fetch()`, `fetch_with_retries()` (resumable via HTTP Range, prefix re-hashing),
+  `fetch_bytes()`, `has_checksum()`, `part_path()`.
+- `install.rs` – `extract_archive()`, `checked_relative()`, `install_archive()` (transactional),
+  `activate_version()`, `activate_existing()`, `find_main_binary()`, `write_desktop_file()`,
+  `build_desktop_file()`, `quote_exec()`, `copy_icons()`, `copy_extras()`, `install_highres_icon()`,
+  `prune_old_versions()`, `uninstall()`.
+  - TryExec is written **unquoted**. `copy_icons` copies only PNGs (SVGs size-gated <= 50 KB).
+- `ops.rs` – high-level ops shared by GUI and CLI: `check_all()`, `install()`, `install_version()`,
   `upgrade_all()`, `uninstall()`, `doctor()`, `vt_recheck()`, `open_app()`, `prune_download_cache()`,
-  `version_label()`, `installed_dir()`.
-- `state.rs` – `State` (installed map, cached releases, checked_at). `reconcile()` scans disk.
-  `scan_installed()` picks newest version dir with a `bin/` directory.
+  `version_label()`, `installed_dir()`, `pin()`, `unpin()`, `skip()`, `unskip()`, `rollback()`,
+  `is_managed()`. Locking + parallel checks + trust checks integrated.
+- `state.rs` – `State` (installed map, cached releases with etag/last_modified, checked_at, history,
+  pins, skipped). `reconcile()` scans disk and rebuilds history. `scan_versions()`, `scan_installed()`,
+  `record_history()`, `rollback_target()`, `find_version()`, pin/skip helpers.
 - `version.rs` – `ReleaseVersion` parsing/comparison.
 - `progress.rs` – `Progress` enum (Message, Download).
-- `net.rs` – `ureq` wrapper (agent, get, post_form). `http_status_as_error(false)`.
+- `net.rs` – `ureq` wrapper: `agent()`, `get()`, `get_retry()` (backoff + Retry-After), `post_form()`,
+  `is_retryable_status()`. `http_status_as_error(false)`.
 - `error.rs` – `Error` enum (thiserror). All messages in English.
 - `time.rs` – `now_unix()`, `parse_rfc3339()`.
+- `lock.rs` – `OperationLock::acquire()` (non-blocking flock, `Error::Busy` on contention).
+- `theme.rs` – `Theme`, `Theme::load()`, `Theme::from_toml()`, `parse_hex()`, `mix()`. Omarchy palette
+  with built-in fallback.
+- `trust.rs` – `TrustState`, `verify_attestations()`, `classify_attestation()`,
+  `verify_manifest_signature()`, `verify_artifact_signature()`. GPG keyring support.
 
 ### artcraft-hub (`crates/artcraft-hub`)
 
@@ -90,13 +103,16 @@ Native GUI. eframe 0.37 + egui 0.37, glow backend, Wayland + X11 + clipboard.
   - `to_color_image()` thumbnails to 256×256.
   - `local_icon()` prefers icon cache, then hicolor sizes.
   - Footer shows version number (`v{CARGO_PKG_VERSION}`).
+  - Filters (All/Updates/Installed/Not installed), search, keyboard shortcuts, pin/rollback/skip UI.
+  - Omarchy theme integration via `theme::Theme::load`.
   - `--version`/`--help` handled in main().
 - Dependencies: eframe (default_fonts, glow, wayland, x11, clipboard), egui, image (png, webp), serde, serde_json.
 
 ### artcraftctl (`crates/artcraftctl`)
 
-CLI. clap derive. Commands: list, status, check, install, upgrade, uninstall, doctor, config.
-- `status --json` outputs schema v1 JSON used by the Omarchy plugin.
+CLI. clap derive. Commands: list, status, check, install (--version), upgrade, uninstall, doctor, config,
+pin, unpin, skip, unskip, rollback, completions.
+- `status --json` outputs schema v2 JSON used by the Omarchy plugin (pinned/skipped/rollback/versions).
 - `reporter()` prints progress to stderr.
 
 ## Omarchy plugin (`plugins/derfleischmann.artcraft`)
@@ -120,7 +136,8 @@ QML bar widget. Files: `manifest.json`, `BarWidget.qml`, `ArtcraftPanel.qml`, `R
 ## Data flow
 
 1. **Status check**: `artcraftctl status --json` → `ops::check_all()` → for each app: load cached plan
-   (TTL 30 min) or `github::resolve()`. Reconciles installed state from disk. Outputs JSON schema v1.
+   (TTL 30 min) or `github::resolve()`. Reconciles installed state from disk. Outputs JSON schema v2
+   (includes pinned/skipped/rollback/versions fields).
 2. **Plugin polling**: Timer (30 min) → `refresh(false)` → `status --json`. If cache expired, network query.
 3. **Install**: `ops::install()` → VT check (VtClient) → download (SHA-256 verified) → GPG check →
    `install::install_archive()` → extract, desktop file, symlinks, icons, prune old versions.
