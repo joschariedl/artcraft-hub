@@ -13,6 +13,7 @@ icons, and provides an Omarchy bar widget for update notifications and upgrades.
 
 - Language: all user-facing text is **English**.
 - License: MIT.
+- Author: Joscha Riedl (online handle: derfleischmann).
 - Repository: https://github.com/joschariedl/artcraft-hub (private).
 
 ## Workspace layout

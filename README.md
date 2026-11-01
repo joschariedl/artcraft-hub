@@ -388,5 +388,7 @@ The core logic is free of UI dependencies and is shared by GUI and CLI through
 
 ## License
 
-MIT – see repository metadata. ArtCraft itself is a product of Storytold; this project is not
+MIT – see `LICENSE`. Copyright (c) 2026 Joscha Riedl.
+
+ArtCraft itself is a product of Storytold; this project is not
 officially affiliated with it and installs only the official release packages.
