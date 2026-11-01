@@ -189,3 +189,7 @@ Uninstall: `./scripts/uninstall.sh [--apps] [--purge]`.
 - Footer: version number, vertically centered.
 - All text translated to English.
 - Git repo initialized and pushed to https://github.com/joschariedl/artcraft-hub (private).
+- Cross-process `flock` lock (`lock.rs`), transactional installs with rollback, version pinning/skip.
+- Network robustness: retries/backoff, conditional requests, resumable downloads, parallel checks.
+- Stronger trust anchors: signed manifest, GitHub attestations, configurable GPG keyring.
+- Omarchy theme integration, GUI filters and keyboard shortcuts, plugin schema v2.

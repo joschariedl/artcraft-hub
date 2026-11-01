@@ -23,7 +23,7 @@ pub enum Error {
     #[error("SHA-256 mismatch: expected {expected}, got {actual}")]
     HashMismatch { expected: String, actual: String },
 
-    #[error("SHA-256 aus GitHub-Digest und SHA256SUMS.txt widersprechen sich ({0})")]
+    #[error("The SHA-256 digest from GitHub and SHA256SUMS.txt disagree ({0})")]
     ChecksumConflict(String),
 
     #[error("SHA256SUMS.txt contains no entry for {0}")]
@@ -40,6 +40,24 @@ pub enum Error {
 
     #[error("VirusTotal could not verify the file: {0}")]
     VirusTotalUnknown(String),
+
+    #[error("Another ArtCraft operation is already running. Please wait for it to finish.")]
+    Busy,
+
+    #[error("A GPG signature is required, but release {0} does not publish one.")]
+    SignatureRequired(String),
+
+    #[error("GPG signature verification failed: {0}")]
+    SignatureFailed(String),
+
+    #[error("A GitHub attestation is required, but release {0} does not publish one.")]
+    AttestationRequired(String),
+
+    #[error("GitHub attestation verification failed: {0}")]
+    AttestationFailed(String),
+
+    #[error("No previous version is available for {0}.")]
+    NoRollback(String),
 
     #[error("Security check failed: {0}")]
     UnsafeArchive(String),

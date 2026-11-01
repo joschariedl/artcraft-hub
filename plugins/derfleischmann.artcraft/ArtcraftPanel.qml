@@ -40,10 +40,13 @@ Panel {
   property double loadedAt: 0
   property bool upgrading: false
   property string upgradeLog: ""
+  property bool actionRunning: false
 
   readonly property var apps: status.apps || []
   readonly property var updates: apps.filter(function(app) { return app.update_available === true })
   readonly property var missing: apps.filter(function(app) { return app.not_installed === true && !!app.latest_version })
+  readonly property var pinned: apps.filter(function(app) { return app.pinned === true })
+  readonly property var skipped: apps.filter(function(app) { return app.skipped === true })
   readonly property int updateCount: Number(status.update_count) || 0
   readonly property int installedCount: Number(status.installed_count) || 0
   readonly property bool vtMissing: loadedAt > 0 && status.vt_configured === false
@@ -82,7 +85,7 @@ Panel {
   function applyStatus(text) {
     try {
       var data = JSON.parse(text)
-      if (!data || Number(data.schema) !== 1 || !Array.isArray(data.apps))
+      if (!data || Number(data.schema) !== 2 || !Array.isArray(data.apps))
         throw new Error("unbekanntes Format")
       root.status = data
       root.error = ""
@@ -125,10 +128,11 @@ Panel {
     if (text && text.trim() !== "") root.upgradeLog += text + "\n"
   }
 
-  function openHub() {
-    if (!root.bar) return
-    root.bar.run("\"" + root.hubPath + "\"")
-    root.close()
+  function runAction(command) {
+    if (root.actionRunning) return
+    root.actionRunning = true
+    actionProc.command = ["/bin/sh", "-c", "exec \"" + root.ctlPath + "\" " + command]
+    actionProc.running = true
   }
 
   // ---- popup plumbing ---------------------------------------------------
@@ -339,6 +343,18 @@ Panel {
                   enabled: !root.vtMissing && !root.upgrading
                   onClicked: root.upgradeOne(modelData.id)
                 }
+
+                Button {
+                  visible: !!modelData.latest_tag
+                  text: "Skip"
+                  fontSize: Style.font.bodySmall
+                  foreground: root.contentForeground
+                  fontFamily: root.contentFontFamily
+                  bordered: true
+                  enabled: !root.actionRunning
+                  onClicked: root.runAction("skip " + modelData.id + " " + modelData.latest_tag)
+                }
+                }
               }
             }
           }
@@ -356,7 +372,107 @@ Panel {
           wrapMode: Text.WordWrap
         }
 
-        // ---- not installed
+        // ---- pinned
+        Column {
+          visible: root.pinned.length > 0
+          width: parent.width
+          spacing: Style.space(2)
+
+          Text {
+            text: "PINNED"
+            color: root.contentMuted
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            font.letterSpacing: 1
+          }
+
+          Repeater {
+            model: root.pinned
+
+            delegate: RowLayout {
+              required property var modelData
+              width: parent.width
+              spacing: Style.space(8)
+
+              Text {
+                text: modelData.name
+                color: root.contentForeground
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.body
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+              }
+
+              Text {
+                text: modelData.pinned_tag || ""
+                color: root.contentMuted
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+
+              Button {
+                text: "Unpin"
+                fontSize: Style.font.bodySmall
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                bordered: true
+                enabled: !root.actionRunning
+                onClicked: root.runAction("unpin " + modelData.id)
+              }
+            }
+          }
+        }
+
+        // ---- skipped
+        Column {
+          visible: root.skipped.length > 0
+          width: parent.width
+          spacing: Style.space(2)
+
+          Text {
+            text: "SKIPPED"
+            color: root.contentMuted
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.bodySmall
+            font.letterSpacing: 1
+          }
+
+          Repeater {
+            model: root.skipped
+
+            delegate: RowLayout {
+              required property var modelData
+              width: parent.width
+              spacing: Style.space(8)
+
+              Text {
+                text: modelData.name
+                color: root.contentForeground
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.body
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+              }
+
+              Text {
+                text: "latest skipped"
+                color: root.contentMuted
+                font.family: root.contentFontFamily
+                font.pixelSize: Style.font.bodySmall
+              }
+
+              Button {
+                text: "Unskip"
+                fontSize: Style.font.bodySmall
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                bordered: true
+                enabled: !root.actionRunning
+                onClicked: root.runAction("unskip " + modelData.id)
+              }
+            }
+          }
+        }
         Column {
           visible: root.missing.length > 0
           width: parent.width
@@ -534,6 +650,17 @@ Panel {
       statusProc.running = false
       root.loading = false
       root.error = "Timed out while checking releases"
+    }
+  }
+
+  Process {
+    id: actionProc
+    running: false
+    command: ["/bin/sh", "-c", "exec \"$HOME/.local/bin/artcraftctl\" status --json"]
+
+    onExited: function(exitCode) {
+      root.actionRunning = false
+      root.refresh(true)
     }
   }
 

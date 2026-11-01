@@ -13,7 +13,6 @@
 
 use std::fs;
 use std::io::Read;
-use std::time::Duration;
 use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -137,6 +136,10 @@ pub fn checked_relative(path: &Path, top: &mut Option<String>) -> Result<PathBuf
 
 /// Installs `plan` from a verified archive. The archive must already have the
 /// expected SHA-256; it is checked again by [`download::fetch`] before this.
+///
+/// The install is transactional: an existing target directory is moved aside,
+/// the new tree is activated, and any failure restores the previous version so
+/// a half-written release never becomes the active one.
 pub fn install_archive(
     app: &AppDef,
     plan: &ReleasePlan,
@@ -147,6 +150,7 @@ pub fn install_archive(
 ) -> Result<InstalledApp> {
     paths.ensure()?;
 
+    let previous = state::scan_installed(paths).remove(app.id);
     let staging = state::staging_dir(paths, app.id);
     if staging.exists() {
         fs::remove_dir_all(&staging)?;
@@ -164,7 +168,7 @@ pub fn install_archive(
                 "Archive contains no bin/ directory".into(),
             ));
         }
-        let main_binary = find_main_binary(&bin_dir, app).ok_or_else(|| {
+        find_main_binary(&bin_dir, app).ok_or_else(|| {
             Error::Install(format!(
                 "no executable for {} found in bin/",
                 app.name
@@ -172,45 +176,134 @@ pub fn install_archive(
         })?;
 
         let version_dir = paths.app_version_dir(app.id, &plan.version);
-        if version_dir.exists() {
-            fs::remove_dir_all(&version_dir)?;
-        }
         if let Some(parent) = version_dir.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::rename(&content, &version_dir)?;
-
-        let binary = version_dir.join("bin").join(&main_binary);
-        make_executable(&binary)?;
-
-        progress::message(progress, "Creating .desktop file …");
-        write_desktop_file(app, plan, &version_dir, &binary, paths)?;
-
-        progress::message(progress, "Linking programs …");
-        link_binaries(app, &version_dir, paths, progress);
-
-        progress::message(progress, "Installing icons …");
-        copy_icons(app, &version_dir, paths)?;
-
-        copy_extras(app, &version_dir, paths);
-
-        if cfg.install_1024_icons {
-            if let Err(error) = install_highres_icon(app, &plan.tag, paths, progress) {
-                progress::message(
-                    progress,
-                    format!("Note: 1024 px icon not loaded ({error})"),
-                );
+        let backup = paths
+            .app_dir(app.id)
+            .join(format!(".backup-{}", std::process::id()));
+        if backup.exists() {
+            fs::remove_dir_all(&backup)?;
+        }
+        let had_target = version_dir.exists();
+        if had_target {
+            fs::rename(&version_dir, &backup)?;
+        }
+        if let Err(error) = fs::rename(&content, &version_dir) {
+            if had_target {
+                let _ = fs::rename(&backup, &version_dir);
             }
+            return Err(error.into());
         }
 
-        prune_old_versions(app, paths, &version_dir);
-        refresh_desktop_databases(paths);
+        let activated = (|| -> Result<InstalledApp> {
+            let mut record = activate_version(app, &version_dir, &plan.version, paths, progress)?;
+            record.tag = plan.tag.clone();
+            record.sha256 = plan.sha256.clone();
+            if cfg.install_1024_icons {
+                if let Err(error) = install_highres_icon(app, &plan.tag, paths, progress) {
+                    progress::message(
+                        progress,
+                        format!("Note: 1024 px icon not loaded ({error})"),
+                    );
+                }
+            }
+            Ok(record)
+        })();
 
-        Ok(state::installed_record(paths, plan, &version_dir))
+        match activated {
+            Ok(record) => {
+                let _ = fs::remove_dir_all(&backup);
+                prune_old_versions(app, paths, &version_dir, cfg.keeps_versions());
+                refresh_desktop_databases(paths);
+                Ok(record)
+            }
+            Err(error) => {
+                // Undo the activation and put the old tree back.
+                let _ = fs::remove_dir_all(&version_dir);
+                if had_target {
+                    let _ = fs::rename(&backup, &version_dir);
+                }
+                if let Some(previous) = previous.as_ref() {
+                    if previous.dir != version_dir {
+                        let _ = activate_existing(
+                            app,
+                            &previous.dir,
+                            &previous.version,
+                            paths,
+                            progress,
+                        );
+                    }
+                }
+                Err(error)
+            }
+        }
     })();
 
     let _ = fs::remove_dir_all(&staging);
     result
+}
+
+/// Activates an already-extracted version: desktop file, binary links, icons
+/// and shared metadata. Used by installs and by rollback.
+pub fn activate_version(
+    app: &AppDef,
+    version_dir: &Path,
+    version: &str,
+    paths: &Paths,
+    progress: ProgressFn<'_>,
+) -> Result<InstalledApp> {
+    let bin_dir = version_dir.join("bin");
+    if !bin_dir.is_dir() {
+        return Err(Error::Install(format!(
+            "{} {} has no bin/ directory",
+            app.name, version
+        )));
+    }
+    let main_binary = find_main_binary(&bin_dir, app).ok_or_else(|| {
+        Error::Install(format!("no executable for {} found in bin/", app.name))
+    })?;
+    let binary = bin_dir.join(&main_binary);
+    make_executable(&binary)?;
+
+    progress::message(progress, "Creating .desktop file …");
+    write_desktop_file_for(app, version, version_dir, &binary, paths)?;
+
+    progress::message(progress, "Linking programs …");
+    link_binaries(app, version_dir, paths, progress);
+
+    progress::message(progress, "Installing icons …");
+    copy_icons(app, version_dir, paths)?;
+
+    copy_extras(app, version_dir, paths);
+
+    Ok(InstalledApp {
+        version: version.to_string(),
+        tag: version.to_string(),
+        sha256: String::new(),
+        installed_at: crate::time::now_unix(),
+        dir: version_dir.to_path_buf(),
+        desktop_file: paths.desktop_file(&app.bundle_id()),
+    })
+}
+
+/// Switches the active version to a directory that is already on disk.
+pub fn activate_existing(
+    app: &AppDef,
+    version_dir: &Path,
+    version: &str,
+    paths: &Paths,
+    progress: ProgressFn<'_>,
+) -> Result<InstalledApp> {
+    if !paths.is_managed_path(version_dir) || !version_dir.is_dir() {
+        return Err(Error::Install(format!(
+            "{} {} is not present on disk",
+            app.name, version
+        )));
+    }
+    let record = activate_version(app, version_dir, version, paths, progress)?;
+    refresh_desktop_databases(paths);
+    Ok(record)
 }
 
 /// Finds the GUI binary: `<id>`, a legacy stem, or any non-CLI executable.
@@ -255,15 +348,21 @@ pub fn write_desktop_file(
     binary: &Path,
     paths: &Paths,
 ) -> Result<PathBuf> {
+    write_desktop_file_for(app, &plan.version, version_dir, binary, paths)
+}
+
+pub fn write_desktop_file_for(
+    app: &AppDef,
+    version: &str,
+    version_dir: &Path,
+    binary: &Path,
+    paths: &Paths,
+) -> Result<PathBuf> {
     let bundle = app.bundle_id();
     let source = find_source_desktop(version_dir, &bundle);
-    let text = build_desktop_file(app, &plan.version, binary, &bundle, source.as_deref());
+    let text = build_desktop_file(app, version, binary, &bundle, source.as_deref());
     let target = paths.desktop_file(&bundle);
-    if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    fs::write(&target, text)?;
-    fs::set_permissions(&target, fs::Permissions::from_mode(0o644))?;
+    state::write_atomic(&target, text.as_bytes(), 0o644)?;
     Ok(target)
 }
 
@@ -555,24 +654,36 @@ fn install_highres_icon(
     Err(Error::Install("kein 1024-px-PNG im Repository gefunden".into()))
 }
 
-fn prune_old_versions(app: &AppDef, paths: &Paths, keep: &Path) {
+/// Keeps the active version plus the newest `keep_count - 1` rollback targets.
+/// Dot-directories (staging/backup leftovers) are always removed.
+fn prune_old_versions(app: &AppDef, paths: &Paths, active: &Path, keep_count: usize) {
     let root = paths.app_dir(app.id);
     let Ok(entries) = fs::read_dir(&root) else {
         return;
     };
+    let mut versions: Vec<(crate::version::ReleaseVersion, PathBuf)> = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
-        if path == *keep || !path.is_dir() {
+        if path == *active || !path.is_dir() {
             continue;
         }
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.starts_with('.') {
-                let _ = fs::remove_dir_all(&path);
-                continue;
-            }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.') {
+            let _ = fs::remove_dir_all(&path);
+            continue;
         }
         if paths.is_managed_path(&path) {
-            let _ = fs::remove_dir_all(&path);
+            versions.push((crate::version::ReleaseVersion::parse(name), path));
+        }
+    }
+    versions.sort_by(|a, b| b.0.cmp_version(&a.0));
+
+    let keep_others = keep_count.saturating_sub(1);
+    for (index, (_, path)) in versions.into_iter().enumerate() {
+        if index >= keep_others {
+            let _ = fs::remove_dir_all(path);
         }
     }
 }
@@ -601,60 +712,6 @@ fn refresh_desktop_databases(paths: &Paths) {
             .stderr(Stdio::null())
             .status();
     }
-}
-
-/// Verifies an optional GPG signature published next to the release asset.
-/// If no `.sig`/`.asc` asset exists the check is skipped; if one exists and
-/// `gpg` is available it must verify, otherwise the install is aborted.
-pub fn verify_gpg_signature(
-    plan: &ReleasePlan,
-    archive: &Path,
-    progress: ProgressFn<'_>,
-) -> Result<()> {
-    let agent = crate::net::agent(Duration::from_secs(30));
-    let mut signature: Option<Vec<u8>> = None;
-    for suffix in [".sig", ".asc"] {
-        let url = format!("{}{}", plan.asset_url, suffix);
-        let reply = match crate::net::get(&agent, &url, &[], 2 * 1024 * 1024) {
-            Ok(r) => r,
-            Err(_) => continue,
-        };
-        if reply.status == 200 && !reply.body.is_empty() {
-            signature = Some(reply.body);
-            break;
-        }
-    }
-    let Some(sig_bytes) = signature else {
-        progress::message(progress, "No GPG signature published; skipping.");
-        return Ok(());
-    };
-    if std::process::Command::new("gpg")
-        .arg("--version")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_err()
-    {
-        progress::message(progress, "Note: gpg not installed; skipping signature verification.");
-        return Ok(());
-    }
-    let sig_path = archive.with_extension(format!("sig-{}", std::process::id()));
-    std::fs::write(&sig_path, &sig_bytes)?;
-    let output = std::process::Command::new("gpg")
-        .arg("--verify")
-        .arg(&sig_path)
-        .arg(archive)
-        .output()
-        .map_err(|e| Error::Install(format!("gpg failed: {e}")))?;
-    let _ = std::fs::remove_file(&sig_path);
-    if !output.status.success() {
-        return Err(Error::Install(format!(
-            "GPG signature verification failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
-    progress::message(progress, "GPG signature verified.");
-    Ok(())
 }
 
 /// Removes an app completely and returns whether anything was removed.

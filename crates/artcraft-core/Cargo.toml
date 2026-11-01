@@ -11,6 +11,7 @@ base64.workspace = true
 dirs.workspace = true
 flate2.workspace = true
 hex.workspace = true
+libc.workspace = true
 percent-encoding.workspace = true
 semver.workspace = true
 serde.workspace = true

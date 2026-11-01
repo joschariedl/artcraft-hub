@@ -84,6 +84,17 @@ impl ReleasePlan {
     }
 }
 
+/// Result of a conditional release lookup.
+#[derive(Clone, Debug)]
+pub struct ResolveOutcome {
+    pub plan: ReleasePlan,
+    /// Validators to store for the next conditional request.
+    pub etag: Option<String>,
+    pub last_modified: Option<String>,
+    /// The server confirmed that the cached metadata is still current.
+    pub not_modified: bool,
+}
+
 /// A parsed `SHA256SUMS.txt`.
 #[derive(Clone, Debug, Default)]
 pub struct Sums {
@@ -108,10 +119,17 @@ impl Sums {
 /// The latest release of `app`, from GitHub with a feed fallback.
 pub fn latest(app: &AppDef, cfg: &Config) -> Result<Release> {
     let agent = net::agent(Duration::from_secs(45));
-    let from_api = fetch_github(&agent, app, cfg);
+    let attempts = cfg.network_attempts();
+    let from_api = match fetch_github_meta(&agent, app, cfg, None, None, attempts) {
+        Ok(GithubMeta::Release { release, .. }) => Ok(*release),
+        // Without validators the server cannot answer 304, but treat it as a
+        // failed lookup rather than panicking.
+        Ok(GithubMeta::NotModified) => Err(Error::Other("unexpected HTTP 304".into())),
+        Err(error) => Err(error),
+    };
     match from_api {
         Ok(release) => Ok(release),
-        Err(api_error) => match fetch_feed(&agent, app) {
+        Err(api_error) => match fetch_feed(&agent, app, attempts) {
             Ok(release) => Ok(release),
             Err(feed_error) => Err(match api_error {
                 // Rate limiting is the actionable cause; the feed often lacks
@@ -126,14 +144,130 @@ pub fn latest(app: &AppDef, cfg: &Config) -> Result<Release> {
 
 /// Resolves the latest release down to a verifiable download plan.
 pub fn resolve(app: &AppDef, cfg: &Config) -> Result<ReleasePlan> {
-    let release = latest(app, cfg)?;
-    plan_from_release(app, &release, cfg)
+    Ok(resolve_conditional(app, cfg, None, None, None)?.plan)
+}
+
+/// Resolves the latest release, reusing cached metadata when the server
+/// confirms it is still current (HTTP 304 via `ETag` / `Last-Modified`).
+pub fn resolve_conditional(
+    app: &AppDef,
+    cfg: &Config,
+    cached_plan: Option<&ReleasePlan>,
+    etag: Option<&str>,
+    last_modified: Option<&str>,
+) -> Result<ResolveOutcome> {
+    let agent = net::agent(Duration::from_secs(45));
+    let attempts = cfg.network_attempts();
+
+    match fetch_github_meta(&agent, app, cfg, etag, last_modified, attempts) {
+        Ok(GithubMeta::NotModified) => {
+            let Some(cached) = cached_plan else {
+                // We sent no validators (or the server ignored them); retry
+                // unconditionally instead of failing.
+                return resolve_conditional(app, cfg, None, None, None);
+            };
+            Ok(ResolveOutcome {
+                plan: cached.clone(),
+                etag: etag.map(str::to_string),
+                last_modified: last_modified.map(str::to_string),
+                not_modified: true,
+            })
+        }
+        Ok(GithubMeta::Release {
+            release,
+            etag: new_etag,
+            last_modified: new_last_modified,
+        }) => {
+            let plan = match cached_plan.filter(|plan| plan.tag == release.tag) {
+                Some(cached) => cached.clone(),
+                None => plan_from_release_with_agent(&agent, app, &release, cfg, attempts)?,
+            };
+            Ok(ResolveOutcome {
+                plan,
+                etag: new_etag,
+                last_modified: new_last_modified,
+                not_modified: false,
+            })
+        }
+        Err(api_error) => match fetch_feed(&agent, app, attempts) {
+            Ok(release) => {
+                let plan = match cached_plan.filter(|plan| plan.tag == release.tag) {
+                    Some(cached) => cached.clone(),
+                    None => plan_from_release_with_agent(&agent, app, &release, cfg, attempts)?,
+                };
+                Ok(ResolveOutcome {
+                    plan,
+                    etag: None,
+                    last_modified: None,
+                    not_modified: false,
+                })
+            }
+            Err(feed_error) => Err(match api_error {
+                Error::RateLimited => Error::RateLimited,
+                Error::Http(_) => feed_error,
+                other => Error::Other(format!("{other} (Feed: {feed_error})")),
+            }),
+        },
+    }
+}
+
+/// Resolves one explicitly requested tag (for version pinning and installs).
+pub fn resolve_tag(app: &AppDef, tag: &str, cfg: &Config) -> Result<ReleasePlan> {
+    if !valid_tag(tag) {
+        return Err(Error::InvalidUrl(format!("invalid release tag {tag:?}")));
+    }
+    let agent = net::agent(Duration::from_secs(45));
+    let attempts = cfg.network_attempts();
+    let url = format!("{GITHUB_API}/repos/{}/releases/tags/{tag}", app.repo);
+    let token = cfg.github_token().unwrap_or_default();
+    let mut headers: Vec<(&str, &str)> = vec![
+        ("Accept", "application/vnd.github+json"),
+        ("X-GitHub-Api-Version", "2022-11-28"),
+    ];
+    if !token.is_empty() {
+        headers.push(("Authorization", &token));
+    }
+    let reply = net::get_retry(&agent, &url, &headers, MAX_JSON, attempts)?;
+    match reply.status {
+        200 => {
+            let release = parse_github_release(&reply.body_text(), app.repo)?;
+            if release.tag != tag {
+                return Err(Error::NoRelease(format!("{} {tag}", app.name)));
+            }
+            plan_from_release_with_agent(&agent, app, &release, cfg, attempts)
+        }
+        403 | 429 => {
+            // The feed only mirrors the latest release, but that is still
+            // better than failing for the most common explicit version.
+            match fetch_feed(&agent, app, attempts) {
+                Ok(release) if release.tag == tag => {
+                    plan_from_release_with_agent(&agent, app, &release, cfg, attempts)
+                }
+                _ => Err(Error::RateLimited),
+            }
+        }
+        404 => Err(Error::NoRelease(format!("{} {tag}", app.name))),
+        status => Err(Error::Http(format!(
+            "GitHub replied for {} {tag} with HTTP {status}",
+            app.repo
+        ))),
+    }
 }
 
 /// Fetches `SHA256SUMS.txt` on top of an already known release.
 pub fn plan_from_release(app: &AppDef, release: &Release, cfg: &Config) -> Result<ReleasePlan> {
     let agent = net::agent(Duration::from_secs(45));
-    let sums = match fetch_sums(&agent, app.repo, &release.tag) {
+    plan_from_release_with_agent(&agent, app, release, cfg, cfg.network_attempts())
+}
+
+fn plan_from_release_with_agent(
+    agent: &ureq::Agent,
+    app: &AppDef,
+    release: &Release,
+    cfg: &Config,
+    attempts: u32,
+) -> Result<ReleasePlan> {
+    let sums = match fetch_sums_with_agent(agent, app.repo, &release.tag, attempts) {
         Ok(sums) => Some(sums),
         Err(Error::MissingChecksums(tag)) if !cfg.require_sha256sums => {
             let _ = tag;
@@ -221,27 +355,18 @@ pub fn plan_from_parts(
 
 /// Downloads `SHA256SUMS.txt` for `repo`/`tag` from GitHub.
 pub fn fetch_sums(agent: &ureq::Agent, repo: &str, tag: &str) -> Result<Sums> {
-    if !valid_tag(tag) {
-        return Err(Error::InvalidUrl(format!("unbrauchbarer Release-Tag {tag:?}")));
-    }
-    let url = format!("{}{}/{}", download_prefix(repo), tag, SUMS_NAME);
-    let reply = net::get(
-        agent,
-        &url,
-        &[("Accept", "text/plain, */*")],
-        MAX_SUMS,
-    )?;
-    if reply.status == 404 {
-        return Err(Error::MissingChecksums(tag.to_string()));
-    }
-    if !reply.is_success() {
-        return Err(Error::Http(format!(
-            "SHA256SUMS.txt for {tag}: HTTP {}",
-            reply.status
-        )));
-    }
-    let file_sha256 = sha256_hex(&reply.body);
-    let text = reply.body_text();
+    fetch_sums_with_agent(agent, repo, tag, 1)
+}
+
+fn fetch_sums_with_agent(
+    agent: &ureq::Agent,
+    repo: &str,
+    tag: &str,
+    attempts: u32,
+) -> Result<Sums> {
+    let body = fetch_sums_bytes(agent, repo, tag, attempts)?;
+    let file_sha256 = sha256_hex(&body);
+    let text = String::from_utf8_lossy(&body).to_string();
     let entries = parse_sha256sums(&text);
     if entries.is_empty() {
         return Err(Error::MissingChecksums(format!(
@@ -252,6 +377,36 @@ pub fn fetch_sums(agent: &ureq::Agent, repo: &str, tag: &str) -> Result<Sums> {
         entries,
         file_sha256,
     })
+}
+
+/// Downloads the raw `SHA256SUMS.txt` bytes, used for signature checks.
+pub fn fetch_sums_bytes(
+    agent: &ureq::Agent,
+    repo: &str,
+    tag: &str,
+    attempts: u32,
+) -> Result<Vec<u8>> {
+    if !valid_tag(tag) {
+        return Err(Error::InvalidUrl(format!("invalid release tag {tag:?}")));
+    }
+    let url = format!("{}{}/{}", download_prefix(repo), tag, SUMS_NAME);
+    let reply = net::get_retry(
+        agent,
+        &url,
+        &[("Accept", "text/plain, */*")],
+        MAX_SUMS,
+        attempts,
+    )?;
+    if reply.status == 404 {
+        return Err(Error::MissingChecksums(tag.to_string()));
+    }
+    if !reply.is_success() {
+        return Err(Error::Http(format!(
+            "SHA256SUMS.txt for {tag}: HTTP {}",
+            reply.status
+        )));
+    }
+    Ok(reply.body)
 }
 
 /// Parses `sha256sum` output: `<hex>  <name>` (or `<hex> *<name>`).
@@ -342,19 +497,46 @@ pub fn icon_urls(app: &AppDef, tag: &str) -> Vec<String> {
 // GitHub API
 // ---------------------------------------------------------------------------
 
-fn fetch_github(agent: &ureq::Agent, app: &AppDef, cfg: &Config) -> Result<Release> {
+enum GithubMeta {
+    NotModified,
+    Release {
+        release: Box<Release>,
+        etag: Option<String>,
+        last_modified: Option<String>,
+    },
+}
+
+fn fetch_github_meta(
+    agent: &ureq::Agent,
+    app: &AppDef,
+    cfg: &Config,
+    etag: Option<&str>,
+    last_modified: Option<&str>,
+    attempts: u32,
+) -> Result<GithubMeta> {
     let url = format!("{GITHUB_API}/repos/{}/releases/latest", app.repo);
     let token = cfg.github_token().unwrap_or_default();
     let mut headers: Vec<(&str, &str)> = vec![
         ("Accept", "application/vnd.github+json"),
         ("X-GitHub-Api-Version", "2022-11-28"),
     ];
+    if let Some(etag) = etag {
+        headers.push(("If-None-Match", etag));
+    }
+    if let Some(last_modified) = last_modified {
+        headers.push(("If-Modified-Since", last_modified));
+    }
     if !token.is_empty() {
         headers.push(("Authorization", &token));
     }
-    let reply = net::get(agent, &url, &headers, MAX_JSON)?;
+    let reply = net::get_retry(agent, &url, &headers, MAX_JSON, attempts)?;
     match reply.status {
-        200 => parse_github_release(&reply.body_text(), app.repo),
+        304 => Ok(GithubMeta::NotModified),
+        200 => Ok(GithubMeta::Release {
+            release: Box::new(parse_github_release(&reply.body_text(), app.repo)?),
+            etag: reply.etag,
+            last_modified: reply.last_modified,
+        }),
         403 | 429 => Err(Error::RateLimited),
         404 => Err(Error::NoRelease(app.name.to_string())),
         status => Err(Error::Http(format!(
@@ -457,21 +639,22 @@ fn release_from_value(value: &Value, repo: &str) -> Result<Release> {
 // Storyteller feed
 // ---------------------------------------------------------------------------
 
-fn fetch_feed(agent: &ureq::Agent, app: &AppDef) -> Result<Release> {
-    let reply = net::get(
+fn fetch_feed(agent: &ureq::Agent, app: &AppDef, attempts: u32) -> Result<Release> {
+    let reply = net::get_retry(
         agent,
         FEED_URL,
         &[("Accept", "application/json")],
         MAX_JSON,
+        attempts,
     )?;
     if !reply.is_success() {
         return Err(Error::Http(format!(
-            "Release-Feed antwortete mit HTTP {}",
+            "Release feed replied with HTTP {}",
             reply.status
         )));
     }
     parse_feed(&reply.body_text(), app).ok_or_else(|| {
-        Error::NoRelease(format!("{} (weder GitHub noch Feed)", app.name))
+        Error::NoRelease(format!("{} (neither GitHub nor the feed)", app.name))
     })
 }
 

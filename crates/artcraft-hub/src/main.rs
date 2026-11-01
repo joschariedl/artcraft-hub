@@ -21,17 +21,87 @@ use artcraft_core::paths::Paths;
 use artcraft_core::progress::Progress;
 use artcraft_core::vt::{self, VtCache};
 
-const BG: Color32 = Color32::from_rgb(13, 17, 24);
-const PANEL: Color32 = Color32::from_rgb(18, 23, 32);
-const CARD: Color32 = Color32::from_rgb(24, 30, 41);
-const CARD_HOVER: Color32 = Color32::from_rgb(31, 39, 53);
-const BORDER: Color32 = Color32::from_rgb(42, 51, 68);
-const TEXT: Color32 = Color32::from_rgb(232, 236, 244);
-const MUTED: Color32 = Color32::from_rgb(144, 156, 178);
-const ACCENT: Color32 = Color32::from_rgb(64, 208, 180);
-const OK: Color32 = Color32::from_rgb(92, 200, 130);
-const WARN: Color32 = Color32::from_rgb(240, 180, 80);
-const BAD: Color32 = Color32::from_rgb(240, 105, 115);
+use artcraft_core::theme::Theme;
+use std::sync::OnceLock;
+
+struct Palette {
+    bg: Color32,
+    panel: Color32,
+    card: Color32,
+    card_hover: Color32,
+    border: Color32,
+    text: Color32,
+    muted: Color32,
+    accent: Color32,
+    ok: Color32,
+    warn: Color32,
+    bad: Color32,
+}
+
+impl Palette {
+    fn from_theme(theme: &Theme) -> Self {
+        let to = |c: [u8; 3]| Color32::from_rgb(c[0], c[1], c[2]);
+        let card = theme.card;
+        let card_hover = artcraft_core::theme::mix(card, theme.text, 0.08);
+        Self {
+            bg: to(theme.background),
+            panel: to(theme.panel),
+            card: to(theme.card),
+            card_hover: to(card_hover),
+            border: to(theme.border),
+            text: to(theme.text),
+            muted: to(theme.muted),
+            accent: to(theme.accent),
+            ok: to(theme.ok),
+            warn: to(theme.warn),
+            bad: to(theme.bad),
+        }
+    }
+}
+
+static PALETTE: OnceLock<Palette> = OnceLock::new();
+
+fn palette() -> &'static Palette {
+    PALETTE.get_or_init(|| Palette::from_theme(&Theme::default()))
+}
+
+fn set_palette(theme: &Theme) {
+    let _ = PALETTE.set(Palette::from_theme(theme));
+}
+
+fn bg() -> Color32 {
+    palette().bg
+}
+fn panel() -> Color32 {
+    palette().panel
+}
+fn card() -> Color32 {
+    palette().card
+}
+fn card_hover() -> Color32 {
+    palette().card_hover
+}
+fn border() -> Color32 {
+    palette().border
+}
+fn text() -> Color32 {
+    palette().text
+}
+fn muted() -> Color32 {
+    palette().muted
+}
+fn accent() -> Color32 {
+    palette().accent
+}
+fn ok() -> Color32 {
+    palette().ok
+}
+fn warn() -> Color32 {
+    palette().warn
+}
+fn bad() -> Color32 {
+    palette().bad
+}
 
 fn main() -> eframe::Result<()> {
     let mut args = std::env::args().skip(1);
@@ -75,6 +145,26 @@ enum View {
     Settings,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+enum Filter {
+    #[default]
+    All,
+    Updates,
+    Installed,
+    NotInstalled,
+}
+
+impl Filter {
+    fn label(self) -> &'static str {
+        match self {
+            Filter::All => "All",
+            Filter::Updates => "Updates",
+            Filter::Installed => "Installed",
+            Filter::NotInstalled => "Not installed",
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 enum Busy {
     Check,
@@ -107,6 +197,14 @@ struct SettingsDraft {
     install_1024: bool,
     require_sums: bool,
     check_interval: u64,
+    keep_versions: u64,
+    parallel_checks: u64,
+    network_retries: u64,
+    follow_omarchy_theme: bool,
+    require_attestations: bool,
+    require_signed_manifest: bool,
+    require_gpg_signature: bool,
+    gpg_keyring: String,
 }
 
 impl SettingsDraft {
@@ -118,6 +216,14 @@ impl SettingsDraft {
             install_1024: cfg.install_1024_icons,
             require_sums: cfg.require_sha256sums,
             check_interval: cfg.check_interval_minutes,
+            keep_versions: cfg.keep_versions,
+            parallel_checks: cfg.parallel_checks,
+            network_retries: cfg.network_retries,
+            follow_omarchy_theme: cfg.follow_omarchy_theme,
+            require_attestations: cfg.require_attestations,
+            require_signed_manifest: cfg.require_signed_manifest,
+            require_gpg_signature: cfg.require_gpg_signature,
+            gpg_keyring: cfg.gpg_keyring.clone(),
         }
     }
 
@@ -128,6 +234,14 @@ impl SettingsDraft {
         cfg.install_1024_icons = self.install_1024;
         cfg.require_sha256sums = self.require_sums;
         cfg.check_interval_minutes = self.check_interval.clamp(5, 24 * 60);
+        cfg.keep_versions = self.keep_versions;
+        cfg.parallel_checks = self.parallel_checks;
+        cfg.network_retries = self.network_retries;
+        cfg.follow_omarchy_theme = self.follow_omarchy_theme;
+        cfg.require_attestations = self.require_attestations;
+        cfg.require_signed_manifest = self.require_signed_manifest;
+        cfg.require_gpg_signature = self.require_gpg_signature;
+        cfg.gpg_keyring = self.gpg_keyring.trim().to_string();
     }
 }
 
@@ -152,6 +266,8 @@ struct HubApp {
     confirm_uninstall: Option<String>,
     show_log: bool,
     vt_cache: VtCache,
+    filter: Filter,
+    focus_search: bool,
 }
 
 impl HubApp {
@@ -159,22 +275,28 @@ impl HubApp {
         let paths = Paths::from_env();
         let _ = paths.ensure();
         let cfg = Config::load(&paths).unwrap_or_default();
+        let theme = if cfg.follow_omarchy_theme {
+            Theme::load(&paths)
+        } else {
+            Theme::default()
+        };
+        set_palette(&theme);
         let (tx, rx) = channel();
 
         let mut visuals = egui::Visuals::dark();
-        visuals.panel_fill = BG;
-        visuals.window_fill = CARD;
+        visuals.panel_fill = bg();
+        visuals.window_fill = card();
         visuals.extreme_bg_color = Color32::from_rgb(10, 13, 19);
-        visuals.faint_bg_color = CARD;
-        visuals.override_text_color = Some(TEXT);
-        visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, BORDER);
+        visuals.faint_bg_color = card();
+        visuals.override_text_color = Some(text());
+        visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, border());
         visuals.widgets.inactive.bg_fill = Color32::from_rgb(30, 37, 50);
         visuals.widgets.inactive.weak_bg_fill = Color32::from_rgb(30, 37, 50);
         visuals.widgets.hovered.bg_fill = Color32::from_rgb(40, 49, 65);
         visuals.widgets.hovered.weak_bg_fill = Color32::from_rgb(40, 49, 65);
         visuals.widgets.active.bg_fill = Color32::from_rgb(48, 58, 76);
-        visuals.selection.bg_fill = ACCENT.linear_multiply(0.35);
-        visuals.selection.stroke = Stroke::new(1.0, ACCENT);
+        visuals.selection.bg_fill = accent().linear_multiply(0.35);
+        visuals.selection.stroke = Stroke::new(1.0, accent());
         cc.egui_ctx.set_visuals(visuals);
 
         cc.egui_ctx.all_styles_mut(|style| {
@@ -219,6 +341,8 @@ impl HubApp {
             toast: None,
             confirm_uninstall: None,
             show_log: false,
+            filter: Filter::default(),
+            focus_search: false,
         }
     }
 
@@ -505,9 +629,9 @@ impl HubApp {
         egui::Panel::top("top")
             .frame(
                 egui::Frame::new()
-                    .fill(PANEL)
+                    .fill(panel())
                     .inner_margin(Margin::symmetric(18, 12))
-                    .stroke(Stroke::new(1.0, BORDER)),
+                    .stroke(Stroke::new(1.0, border())),
             )
             .show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -515,13 +639,13 @@ impl HubApp {
                         RichText::new("ArtCraft")
                             .size(24.0)
                             .strong()
-                            .color(TEXT),
+                            .color(text()),
                     );
                     ui.label(
                         RichText::new("HUB")
                             .size(20.0)
                             .strong()
-                            .color(ACCENT),
+                            .color(accent()),
                     );
                     ui.add_space(24.0);
                     if ui
@@ -539,8 +663,8 @@ impl HubApp {
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         if let Some(busy) = &self.busy {
-                            ui.add(egui::Spinner::new().size(16.0).color(ACCENT));
-                            ui.label(RichText::new(busy.label()).color(MUTED));
+                            ui.add(egui::Spinner::new().size(16.0).color(accent()));
+                            ui.label(RichText::new(busy.label()).color(muted()));
                         } else {
                             let updates = self
                                 .statuses
@@ -555,7 +679,7 @@ impl HubApp {
                                                 .color(Color32::BLACK)
                                                 .strong(),
                                         )
-                                        .fill(ACCENT)
+                                        .fill(accent())
                                         .corner_radius(CornerRadius::same(8)),
                                     )
                                     .clicked()
@@ -575,7 +699,7 @@ impl HubApp {
                                                 .color(Color32::BLACK)
                                                 .strong(),
                                         )
-                                        .fill(ACCENT)
+                                        .fill(accent())
                                         .corner_radius(CornerRadius::same(8)),
                                     )
                                     .clicked()
@@ -595,9 +719,9 @@ impl HubApp {
         egui::Panel::bottom("bottom")
             .frame(
                 egui::Frame::new()
-                    .fill(PANEL)
+                    .fill(panel())
                     .inner_margin(Margin::symmetric(18, 8))
-                    .stroke(Stroke::new(1.0, BORDER)),
+                    .stroke(Stroke::new(1.0, border())),
             )
             .show(ui, |ui| {
                 ui.horizontal_centered(|ui| {
@@ -611,7 +735,7 @@ impl HubApp {
                                 egui::ProgressBar::new(fraction)
                                     .desired_width(220.0)
                                     .corner_radius(CornerRadius::same(4))
-                                    .fill(ACCENT),
+                                    .fill(accent()),
                             );
                             ui.label(
                                 RichText::new(format!(
@@ -620,40 +744,40 @@ impl HubApp {
                                     total.unwrap_or(0) as f64 / 1_048_576.0
                                 ))
                                 .small()
-                                .color(MUTED),
+                                .color(muted()),
                             );
                         } else {
-                            ui.label(RichText::new("Working …").color(MUTED));
+                            ui.label(RichText::new("Working …").color(muted()));
                         }
                     } else if let Some(last) = self.log.last() {
                         ui.label(
                             RichText::new(truncate(last, 110))
                                 .small()
-                                .color(MUTED),
+                                .color(muted()),
                         );
                     } else {
-                        ui.label(RichText::new("Ready.").small().color(MUTED));
+                        ui.label(RichText::new("Ready.").small().color(muted()));
                     }
 
                     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                         ui.label(
                             RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
                                 .small()
-                                .color(MUTED),
+                                .color(muted()),
                         );
                         if ui
                             .selectable_label(
                                 self.show_log,
-                                RichText::new("Log").small().color(TEXT),
+                                RichText::new("Log").small().color(text()),
                             )
                             .clicked()
                         {
                             self.show_log = !self.show_log;
                         }
                         let vt = if self.cfg.vt_key().is_some() {
-                            RichText::new("VirusTotal active").small().color(OK)
+                            RichText::new("VirusTotal active").small().color(ok())
                         } else {
-                            RichText::new("VirusTotal key missing").small().color(BAD)
+                            RichText::new("VirusTotal key missing").small().color(bad())
                         };
                         ui.label(vt);
                     });
@@ -666,16 +790,32 @@ impl HubApp {
             .exact_size(330.0)
             .frame(
                 egui::Frame::new()
-                    .fill(PANEL)
+                    .fill(panel())
                     .inner_margin(Margin::symmetric(12, 12))
-                    .stroke(Stroke::new(1.0, BORDER)),
+                    .stroke(Stroke::new(1.0, border())),
             )
             .show(ui, |ui| {
-                ui.add(
+                ui.horizontal_wrapped(|ui| {
+                    for filter in [Filter::All, Filter::Updates, Filter::Installed, Filter::NotInstalled] {
+                        if ui
+                            .selectable_label(self.filter == filter, filter.label())
+                            .clicked()
+                        {
+                            self.filter = filter;
+                        }
+                    }
+                });
+                ui.add_space(4.0);
+                let response = ui.add(
                     egui::TextEdit::singleline(&mut self.search)
+                        .id_source("search")
                         .hint_text("Search apps …")
                         .desired_width(f32::INFINITY),
                 );
+                if self.focus_search {
+                    response.request_focus();
+                    self.focus_search = false;
+                }
                 ui.add_space(4.0);
 
                 let search = self.search.trim().to_lowercase();
@@ -684,6 +824,9 @@ impl HubApp {
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         for status in &self.statuses {
+                            if !matches_filter(status, self.filter) {
+                                continue;
+                            }
                             if !search.is_empty()
                                 && !status.name.to_lowercase().contains(&search)
                                 && !status.id.contains(&search)
@@ -692,12 +835,12 @@ impl HubApp {
                             }
                             let selected = self.selected.as_deref() == Some(&status.id);
                             let frame = egui::Frame::new()
-                                .fill(if selected { CARD_HOVER } else { CARD })
+                                .fill(if selected { card_hover() } else { card() })
                                 .corner_radius(CornerRadius::same(10))
                                 .inner_margin(Margin::symmetric(10, 8))
                                 .stroke(Stroke::new(
                                     1.0,
-                                    if selected { ACCENT } else { BORDER },
+                                    if selected { accent() } else { border() },
                                 ));
                             let row = frame
                                 .show(ui, |ui| {
@@ -708,7 +851,7 @@ impl HubApp {
                                             ui.label(
                                                 RichText::new(&status.name)
                                                     .strong()
-                                                    .color(TEXT),
+                                                    .color(text()),
                                             );
                                             let (text, color) = side_status(status);
                                             ui.label(
@@ -723,7 +866,7 @@ impl HubApp {
                                                 if status.update_available {
                                                     ui.label(
                                                         RichText::new("●")
-                                                            .color(WARN)
+                                                            .color(warn())
                                                             .strong(),
                                                     );
                                                 } else if status.installed_version.is_some()
@@ -811,7 +954,7 @@ impl HubApp {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(BG)
+                    .fill(bg())
                     .inner_margin(Margin::symmetric(24, 18)),
             )
             .show(ui, |ui| {
@@ -824,15 +967,15 @@ impl HubApp {
                         .fill(Color32::from_rgb(58, 30, 34))
                         .corner_radius(CornerRadius::same(10))
                         .inner_margin(Margin::symmetric(14, 12))
-                        .stroke(Stroke::new(1.0, BAD.linear_multiply(0.6)))
+                        .stroke(Stroke::new(1.0, bad().linear_multiply(0.6)))
                         .show(ui, |ui| {
                             ui.horizontal_wrapped(|ui| {
-                                ui.label(RichText::new("⚠").color(BAD).strong());
+                                ui.label(RichText::new("⚠").color(bad()).strong());
                                 ui.label(
                                     RichText::new(
                                         "No VirusTotal API key configured. Installs are locked until a key is set.",
                                     )
-                                    .color(TEXT),
+                                    .color(text()),
                                 );
                                 if ui.button("Set up now").clicked() {
                                     self.view = View::Settings;
@@ -850,9 +993,9 @@ impl HubApp {
                 else {
                     ui.centered_and_justified(|ui| {
                         if self.busy.is_some() {
-                            ui.add(egui::Spinner::new().size(28.0).color(ACCENT));
+                            ui.add(egui::Spinner::new().size(28.0).color(accent()));
                         } else {
-                            ui.label(RichText::new("No app selected.").color(MUTED));
+                            ui.label(RichText::new("No app selected.").color(muted()));
                         }
                     });
                     return;
@@ -867,16 +1010,16 @@ impl HubApp {
                             RichText::new(&status.name)
                                 .size(30.0)
                                 .strong()
-                                .color(TEXT),
+                                .color(text()),
                         );
                         ui.label(
                             RichText::new(&status.tagline)
                                 .size(15.0)
-                                .color(MUTED),
+                                .color(muted()),
                         );
                         if let Some(app) = app {
                             ui.hyperlink_to(
-                                RichText::new("getartcraft.com").small().color(ACCENT),
+                                RichText::new("getartcraft.com").small().color(accent()),
                                 app.website(),
                             );
                         }
@@ -893,12 +1036,12 @@ impl HubApp {
                 ui.add_space(12.0);
 
                 egui::Frame::new()
-                    .fill(CARD)
+                    .fill(card())
                     .corner_radius(CornerRadius::same(10))
                     .inner_margin(Margin::symmetric(14, 12))
-                    .stroke(Stroke::new(1.0, BORDER))
+                    .stroke(Stroke::new(1.0, border()))
                     .show(ui, |ui| {
-                        ui.label(RichText::new("Release notes").strong().color(TEXT));
+                        ui.label(RichText::new("Release notes").strong().color(text()));
                         ui.add_space(4.0);
                         let notes = status
                             .plan
@@ -915,7 +1058,7 @@ impl HubApp {
                                     RichText::new(truncate(notes, 6000))
                                         .monospace()
                                         .size(12.0)
-                                        .color(MUTED),
+                                        .color(muted()),
                                 );
                             });
                     });
@@ -939,7 +1082,7 @@ impl HubApp {
                     egui::Button::new(
                         RichText::new(install_label).strong().color(Color32::BLACK),
                     )
-                    .fill(ACCENT)
+                    .fill(accent())
                     .corner_radius(CornerRadius::same(8))
                     .min_size(Vec2::new(140.0, 34.0)),
                 )
@@ -952,7 +1095,7 @@ impl HubApp {
                 && ui
                     .add_enabled(
                         !busy,
-                        egui::Button::new(RichText::new("Open").color(TEXT))
+                        egui::Button::new(RichText::new("Open").color(text()))
                             .corner_radius(CornerRadius::same(8))
                             .min_size(Vec2::new(90.0, 34.0)),
                     )
@@ -968,61 +1111,176 @@ impl HubApp {
                 && ui
                     .add_enabled(
                         !busy,
-                        egui::Button::new(RichText::new("Remove").color(BAD))
-                            .corner_radius(CornerRadius::same(8))
-                            .min_size(Vec2::new(120.0, 34.0)),
+                        egui::Button::new(
+                            RichText::new(if status.pinned { "Unpin" } else { "Pin" }).color(text()),
+                        )
+                        .corner_radius(CornerRadius::same(8))
+                        .min_size(Vec2::new(90.0, 34.0)),
                     )
                     .clicked()
             {
-                self.confirm_uninstall = Some(status.id.clone());
+                let id = status.id.clone();
+                let ctx = ctx.clone();
+                if status.pinned {
+                    match ops::unpin(&id, &self.paths) {
+                        Ok(_) => self.toast(format!("{} can be updated again.", status.name), true),
+                        Err(error) => self.toast(format!("Unpin failed: {error}"), false),
+                    }
+                } else {
+                    match ops::pin(&id, None, &self.paths) {
+                        Ok(tag) => self.toast(format!("{} pinned to {tag}.", status.name), true),
+                        Err(error) => self.toast(format!("Pin failed: {error}"), false),
+                    }
+                }
+                self.spawn_check(&ctx, false);
+            }
+
+            if status.installed_version.is_some()
+                && status.rollback_version.is_some()
+                && ui
+                    .add_enabled(
+                        !busy,
+                        egui::Button::new(RichText::new(format!(
+                            "Roll back to {}",
+                            status.rollback_version.as_deref().unwrap_or("?")
+                        ))
+                        .color(text()))
+                        .corner_radius(CornerRadius::same(8))
+                        .min_size(Vec2::new(140.0, 34.0)),
+                    )
+                    .clicked()
+            {
+                let tx = self.tx.clone();
+                let paths = self.paths.clone();
+                let busy_name = status.name.clone();
+                let name = status.name.clone();
+                let id = status.id.clone();
+                let target = status.rollback_version.clone();
+                let ctx = ctx.clone();
+                std::thread::spawn(move || {
+                    let progress = |event: Progress| {
+                        let _ = tx.send(Msg::Progress(event));
+                        ctx.request_repaint();
+                    };
+                    match ops::rollback(&id, target.as_deref(), &paths, &progress) {
+                        Ok(outcome) => {
+                            let _ = tx.send(Msg::Done {
+                                text: format!("{} {} is active and pinned.", name.clone(), outcome.version),
+                                ok: true,
+                            });
+                        }
+                        Err(error) => {
+                            let _ = tx.send(Msg::Done {
+                                text: format!("{name}: {error}"),
+                                ok: false,
+                            });
+                        }
+                    }
+                    ctx.request_repaint();
+                });
+                self.busy = Some(Busy::Install(busy_name));
+            }
+
+            if status.update_available || status.skipped {
+                let label = if status.skipped {
+                    "Don't skip"
+                } else {
+                    "Skip this version"
+                };
+                if ui
+                    .add_enabled(
+                        !busy,
+                        egui::Button::new(RichText::new(label).color(text()))
+                            .corner_radius(CornerRadius::same(8))
+                            .min_size(Vec2::new(130.0, 34.0)),
+                    )
+                    .clicked()
+                {
+                    let id = status.id.clone();
+                    let ctx = ctx.clone();
+                    if status.skipped {
+                        match ops::unskip(&id, &self.paths) {
+                            Ok(_) => self.toast("Version is no longer skipped.", true),
+                            Err(error) => self.toast(format!("Unskip failed: {error}"), false),
+                        }
+                    } else if let Some(tag) = &status.latest_tag {
+                        match ops::skip(&id, Some(tag), &self.paths) {
+                            Ok(_) => self.toast(format!("{} skipped.", tag), true),
+                            Err(error) => self.toast(format!("Skip failed: {error}"), false),
+                        }
+                    }
+                    self.spawn_check(&ctx, false);
+                }
             }
 
             if status.plan.is_some() && self.cfg.vt_key().is_none() {
                 ui.label(
                     RichText::new("VirusTotal key required")
                         .small()
-                        .color(WARN),
+                        .color(warn()),
                 );
             }
         });
         if let Some(error) = &status.error {
             ui.add_space(4.0);
-            ui.label(RichText::new(format!("Note: {error}")).small().color(WARN));
+            ui.label(RichText::new(format!("Note: {error}")).small().color(warn()));
         }
     }
 
     fn info_card(&self, ui: &mut egui::Ui, status: &AppStatus) {
         egui::Frame::new()
-            .fill(CARD)
+            .fill(card())
             .corner_radius(CornerRadius::same(10))
             .inner_margin(Margin::symmetric(14, 12))
-            .stroke(Stroke::new(1.0, BORDER))
+            .stroke(Stroke::new(1.0, border()))
             .show(ui, |ui| {
                 egui::Grid::new("info")
                     .num_columns(2)
                     .spacing([24.0, 7.0])
                     .show(ui, |ui| {
-                        row(ui, "Installed", status.installed_version.as_deref().unwrap_or("–"), TEXT);
+                        row(ui, "Installed", status.installed_version.as_deref().unwrap_or("–"), text());
                         row(
                             ui,
                             "Latest version",
                             status.latest_version.as_deref().unwrap_or("–"),
-                            if status.update_available { WARN } else { TEXT },
+                            if status.update_available { warn() } else { text() },
                         );
                         row(
                             ui,
                             "Release",
                             status.latest_tag.as_deref().unwrap_or("–"),
-                            MUTED,
+                            muted(),
                         );
+                        if status.pinned {
+                            row(
+                                ui,
+                                "Pin",
+                                status.pinned_tag.as_deref().unwrap_or("pinned"),
+                                accent(),
+                            );
+                        }
+                        if status.skipped {
+                            row(ui, "Skipped", "latest release skipped", warn());
+                        }
+                        if let Some(version) = &status.rollback_version {
+                            row(ui, "Rollback", version, muted());
+                        }
+                        if !status.versions.is_empty() {
+                            row(
+                                ui,
+                                "Versions",
+                                &status.versions.join(", "),
+                                muted(),
+                            );
+                        }
                         let sha = status
                             .latest_sha256
                             .as_deref()
                             .map(|s| format!("{}…", &s[..16.min(s.len())]))
                             .unwrap_or_else(|| "–".into());
-                        ui.label(RichText::new("SHA-256").color(MUTED));
+                        ui.label(RichText::new("SHA-256").color(muted()));
                         ui.horizontal(|ui| {
-                            ui.label(RichText::new(sha).monospace().color(TEXT));
+                            ui.label(RichText::new(sha).monospace().color(text()));
                             if let Some(sha) = &status.latest_sha256 {
                                 if ui.small_button("copy").clicked() {
                                     ui.ctx().copy_text(sha.clone());
@@ -1036,12 +1294,12 @@ impl HubApp {
 
     fn security_card(&mut self, ui: &mut egui::Ui, status: &AppStatus) {
         egui::Frame::new()
-            .fill(CARD)
+            .fill(card())
             .corner_radius(CornerRadius::same(10))
             .inner_margin(Margin::symmetric(14, 12))
-            .stroke(Stroke::new(1.0, BORDER))
+            .stroke(Stroke::new(1.0, border()))
             .show(ui, |ui| {
-                ui.label(RichText::new("Security check").strong().color(TEXT));
+                ui.label(RichText::new("Security check").strong().color(text()));
                 ui.add_space(2.0);
                 check_line(
                     ui,
@@ -1079,7 +1337,7 @@ impl HubApp {
                             if ui
                                 .add(
                                     egui::Button::new(
-                                        RichText::new("VirusTotal report").small().color(ACCENT),
+                                        RichText::new("VirusTotal report").small().color(accent()),
                                     )
                                     .frame(false),
                                 )
@@ -1109,23 +1367,23 @@ impl HubApp {
                 "Configuration is stored in ~/.config/artcraft-hub/config.toml with mode 0600.",
             )
             .small()
-            .color(MUTED),
+            .color(muted()),
         );
         ui.add_space(12.0);
 
         egui::Frame::new()
-            .fill(CARD)
+            .fill(card())
             .corner_radius(CornerRadius::same(10))
             .inner_margin(Margin::symmetric(14, 12))
-            .stroke(Stroke::new(1.0, BORDER))
+            .stroke(Stroke::new(1.0, border()))
             .show(ui, |ui| {
-                ui.label(RichText::new("VirusTotal").strong().color(TEXT));
+                ui.label(RichText::new("VirusTotal").strong().color(text()));
                 ui.label(
                     RichText::new(
                         "Public API: 4 requests per minute, 500 per day. The key is only used for checks; files are never uploaded.",
                     )
                     .small()
-                    .color(MUTED),
+                    .color(muted()),
                 );
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
@@ -1147,25 +1405,25 @@ impl HubApp {
                             "Currently VIRUSTOTAL_API_KEY from the environment is used.",
                         )
                         .small()
-                        .color(MUTED),
+                        .color(muted()),
                     );
                 }
             });
         ui.add_space(10.0);
 
         egui::Frame::new()
-            .fill(CARD)
+            .fill(card())
             .corner_radius(CornerRadius::same(10))
             .inner_margin(Margin::symmetric(14, 12))
-            .stroke(Stroke::new(1.0, BORDER))
+            .stroke(Stroke::new(1.0, border()))
             .show(ui, |ui| {
-                ui.label(RichText::new("GitHub").strong().color(TEXT));
+                ui.label(RichText::new("GitHub").strong().color(text()));
                 ui.label(
                     RichText::new(
                         "Optional. A token raises the API limit from 60 to 5,000 requests per hour; without one the release feed is used as fallback.",
                     )
                     .small()
-                    .color(MUTED),
+                    .color(muted()),
                 );
                 ui.add_space(6.0);
                 ui.add(
@@ -1178,12 +1436,12 @@ impl HubApp {
         ui.add_space(10.0);
 
         egui::Frame::new()
-            .fill(CARD)
+            .fill(card())
             .corner_radius(CornerRadius::same(10))
             .inner_margin(Margin::symmetric(14, 12))
-            .stroke(Stroke::new(1.0, BORDER))
+            .stroke(Stroke::new(1.0, border()))
             .show(ui, |ui| {
-                ui.label(RichText::new("Behaviour").strong().color(TEXT));
+                ui.label(RichText::new("Behaviour").strong().color(text()));
                 ui.checkbox(
                     &mut self.settings.require_sums,
                     "Require SHA256SUMS.txt",
@@ -1191,6 +1449,10 @@ impl HubApp {
                 ui.checkbox(
                     &mut self.settings.install_1024,
                     "Install 1024 px icon from the repository",
+                );
+                ui.checkbox(
+                    &mut self.settings.follow_omarchy_theme,
+                    "Follow the active Omarchy theme",
                 );
                 ui.horizontal(|ui| {
                     ui.label("Check interval:");
@@ -1200,6 +1462,27 @@ impl HubApp {
                             .suffix(" min"),
                     );
                 });
+                ui.horizontal(|ui| {
+                    ui.label("Versions kept:");
+                    ui.add(
+                        egui::DragValue::new(&mut self.settings.keep_versions)
+                            .range(1..=10),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Parallel checks:");
+                    ui.add(
+                        egui::DragValue::new(&mut self.settings.parallel_checks)
+                            .range(1..=8),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Network attempts:");
+                    ui.add(
+                        egui::DragValue::new(&mut self.settings.network_retries)
+                            .range(1..=6),
+                    );
+                });
             });
         ui.add_space(10.0);
 
@@ -1207,9 +1490,9 @@ impl HubApp {
             .fill(Color32::from_rgb(46, 35, 20))
             .corner_radius(CornerRadius::same(10))
             .inner_margin(Margin::symmetric(14, 12))
-            .stroke(Stroke::new(1.0, WARN.linear_multiply(0.5)))
+            .stroke(Stroke::new(1.0, warn().linear_multiply(0.5)))
             .show(ui, |ui| {
-                ui.label(RichText::new("Advanced").strong().color(WARN));
+                ui.label(RichText::new("Advanced").strong().color(warn()));
                 ui.checkbox(
                     &mut self.settings.allow_unknown,
                     "Allow unclear VirusTotal results",
@@ -1219,7 +1502,26 @@ impl HubApp {
                         "Not recommended: if VirusTotal cannot confirm the content, the app is installed anyway.",
                     )
                     .small()
-                    .color(MUTED),
+                    .color(muted()),
+                );
+                ui.add_space(6.0);
+                ui.label(RichText::new("Trust anchors").strong().color(text()));
+                ui.checkbox(
+                    &mut self.settings.require_attestations,
+                    "Require GitHub provenance attestations",
+                );
+                ui.checkbox(
+                    &mut self.settings.require_signed_manifest,
+                    "Require a signed SHA256SUMS.txt manifest",
+                );
+                ui.checkbox(
+                    &mut self.settings.require_gpg_signature,
+                    "Require a GPG signature for the archive",
+                );
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.settings.gpg_keyring)
+                        .hint_text("GPG keyring path (empty = default)")
+                        .desired_width(420.0),
                 );
             });
 
@@ -1228,7 +1530,7 @@ impl HubApp {
             if ui
                 .add(
                     egui::Button::new(RichText::new("Save").strong().color(Color32::BLACK))
-                        .fill(ACCENT)
+                        .fill(accent())
                         .corner_radius(CornerRadius::same(8))
                         .min_size(Vec2::new(130.0, 34.0)),
                 )
@@ -1275,10 +1577,10 @@ impl HubApp {
             .open(&mut open)
             .frame(
                 egui::Frame::new()
-                    .fill(PANEL)
+                    .fill(panel())
                     .corner_radius(CornerRadius::same(12))
                     .inner_margin(Margin::same(18))
-                    .stroke(Stroke::new(1.0, BORDER)),
+                    .stroke(Stroke::new(1.0, border())),
             )
             .show(ctx, |ui| {
                 ui.label(
@@ -1286,12 +1588,12 @@ impl HubApp {
                         "{} app(s) can be updated.",
                         updates.len()
                     ))
-                    .color(TEXT),
+                    .color(text()),
                 );
                 ui.label(
                     RichText::new("Every update is re-checked via SHA-256 and VirusTotal.")
                         .small()
-                        .color(MUTED),
+                        .color(muted()),
                 );
                 ui.add_space(8.0);
                 for status in &updates {
@@ -1311,7 +1613,7 @@ impl HubApp {
                                     status.latest_version.as_deref(),
                                 ))
                                 .small()
-                                .color(MUTED),
+                                .color(muted()),
                             );
                         });
                     });
@@ -1353,7 +1655,7 @@ impl HubApp {
                                     .strong()
                                     .color(Color32::BLACK),
                                 )
-                                .fill(ACCENT)
+                                .fill(accent())
                                 .corner_radius(CornerRadius::same(8)),
                             )
                             .clicked()
@@ -1394,7 +1696,7 @@ impl HubApp {
                     if ui
                         .add(
                             egui::Button::new(RichText::new("Remove").color(Color32::WHITE))
-                                .fill(BAD.linear_multiply(0.8))
+                                .fill(bad().linear_multiply(0.8))
                                 .corner_radius(CornerRadius::same(8)),
                         )
                         .clicked()
@@ -1438,10 +1740,10 @@ impl HubApp {
             .default_height(360.0)
             .frame(
                 egui::Frame::new()
-                    .fill(PANEL)
+                    .fill(panel())
                     .corner_radius(CornerRadius::same(12))
                     .inner_margin(Margin::same(14))
-                    .stroke(Stroke::new(1.0, BORDER)),
+                    .stroke(Stroke::new(1.0, border())),
             )
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical()
@@ -1453,7 +1755,7 @@ impl HubApp {
                                 RichText::new(line)
                                     .monospace()
                                     .size(12.0)
-                                    .color(MUTED),
+                                    .color(muted()),
                             );
                         }
                     });
@@ -1483,12 +1785,12 @@ impl HubApp {
                     .inner_margin(Margin::symmetric(16, 10))
                     .stroke(Stroke::new(
                         1.0,
-                        if ok { OK.linear_multiply(0.6) } else { BAD.linear_multiply(0.6) },
+                        if ok { palette().ok.linear_multiply(0.6) } else { palette().bad.linear_multiply(0.6) },
                     ))
                     .show(ui, |ui| {
                         ui.label(
                             RichText::new(truncate(&text, 160))
-                                .color(if ok { OK } else { BAD }),
+                                .color(if ok { palette().ok } else { palette().bad }),
                         );
                     });
             });
@@ -1503,6 +1805,60 @@ impl eframe::App for HubApp {
         if !self.icons_started {
             self.icons_started = true;
             self.spawn_check(&ctx, false);
+        }
+
+        // Keyboard shortcuts.
+        let mut refresh = false;
+        let mut toggle_updates = false;
+        let mut focus_search = false;
+        let mut close_windows = false;
+        let mut filter_set: Option<Filter> = None;
+        ctx.input(|i| {
+            if i.key_pressed(egui::Key::F5)
+                || (i.modifiers.ctrl && i.key_pressed(egui::Key::R))
+            {
+                refresh = true;
+            }
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::F) {
+                focus_search = true;
+            }
+            if i.modifiers.ctrl && i.key_pressed(egui::Key::U) {
+                toggle_updates = true;
+            }
+            if i.key_pressed(egui::Key::Escape) {
+                close_windows = true;
+            }
+            if !i.modifiers.ctrl && !i.modifiers.alt && !ctx.egui_wants_keyboard_input() {
+                if i.key_pressed(egui::Key::Num1) {
+                    filter_set = Some(Filter::All);
+                }
+                if i.key_pressed(egui::Key::Num2) {
+                    filter_set = Some(Filter::Updates);
+                }
+                if i.key_pressed(egui::Key::Num3) {
+                    filter_set = Some(Filter::Installed);
+                }
+                if i.key_pressed(egui::Key::Num4) {
+                    filter_set = Some(Filter::NotInstalled);
+                }
+            }
+        });
+        if refresh {
+            self.spawn_check(&ctx, true);
+        }
+        if focus_search {
+            self.focus_search = true;
+        }
+        if toggle_updates {
+            self.show_updates = !self.show_updates;
+        }
+        if close_windows {
+            self.show_updates = false;
+            self.show_log = false;
+            self.confirm_uninstall = None;
+        }
+        if let Some(filter) = filter_set {
+            self.filter = filter;
         }
 
         self.top_bar(ui);
@@ -1522,7 +1878,7 @@ impl eframe::App for HubApp {
 // ---------------------------------------------------------------------------
 
 fn row(ui: &mut egui::Ui, label: &str, value: &str, color: Color32) {
-    ui.label(RichText::new(label).color(MUTED));
+    ui.label(RichText::new(label).color(muted()));
     ui.label(RichText::new(value).color(color));
     ui.end_row();
 }
@@ -1530,14 +1886,14 @@ fn row(ui: &mut egui::Ui, label: &str, value: &str, color: Color32) {
 fn check_line(ui: &mut egui::Ui, ok: bool, text: &str) {
     ui.horizontal_wrapped(|ui| {
         status_glyph(ui, ok);
-        ui.label(RichText::new(text).small().color(MUTED));
+        ui.label(RichText::new(text).small().color(muted()));
     });
 }
 
 fn status_glyph(ui: &mut egui::Ui, ok: bool) {
     let (rect, _) = ui.allocate_exact_size(Vec2::splat(14.0), Sense::hover());
     let painter = ui.painter_at(rect);
-    let color = if ok { OK } else { BAD };
+    let color = if ok { palette().ok } else { palette().bad };
     let c = rect.center();
     if ok {
         painter.line_segment([c + Vec2::new(-5.0, 1.0), c + Vec2::new(-1.5, 5.0)], Stroke::new(2.0, color));
@@ -1548,7 +1904,28 @@ fn status_glyph(ui: &mut egui::Ui, ok: bool) {
     }
 }
 
+fn matches_filter(status: &AppStatus, filter: Filter) -> bool {
+    match filter {
+        Filter::All => true,
+        Filter::Updates => status.update_available,
+        Filter::Installed => status.installed_version.is_some(),
+        Filter::NotInstalled => status.installed_version.is_none(),
+    }
+}
+
 fn side_status(status: &AppStatus) -> (String, Color32) {
+    if status.pinned {
+        return (
+            format!(
+                "Pinned - {}",
+                status.pinned_tag.as_deref().unwrap_or("?")
+            ),
+            accent(),
+        );
+    }
+    if status.skipped {
+        return ("Latest release skipped".into(), muted());
+    }
     if status.update_available {
         (
             format!(
@@ -1556,20 +1933,20 @@ fn side_status(status: &AppStatus) -> (String, Color32) {
                 status.installed_version.as_deref().unwrap_or("?"),
                 status.latest_version.as_deref().unwrap_or("?")
             ),
-            WARN,
+            warn(),
         )
     } else if let Some(version) = &status.installed_version {
-        (format!("Installed - {version}"), OK)
+        (format!("Installed - {version}"), ok())
     } else if let Some(error) = &status.error {
         if error.contains("No release") {
-            ("No release yet".into(), MUTED)
+            ("No release yet".into(), muted())
         } else {
-            ("Check failed".into(), MUTED)
+            ("Check failed".into(), muted())
         }
     } else if let Some(latest) = &status.latest_version {
-        (format!("Not installed - {latest}"), MUTED)
+        (format!("Not installed - {latest}"), muted())
     } else {
-        ("Unknown".into(), MUTED)
+        ("Unknown".into(), muted())
     }
 }
 

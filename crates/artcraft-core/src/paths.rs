@@ -56,8 +56,31 @@ impl Paths {
         self.state_dir.join("virustotal-cache.json")
     }
 
+    pub fn lock_file(&self) -> PathBuf {
+        self.state_dir.join("operation.lock")
+    }
+
     pub fn download_dir(&self) -> PathBuf {
         self.cache_dir.join("downloads")
+    }
+
+    /// `~/.local/state/omarchy/current/theme/colors.toml`, when Omarchy is
+    /// installed. Derived from the XDG state directory so tests can redirect
+    /// the whole tree.
+    pub fn omarchy_theme_file(&self) -> PathBuf {
+        self.omarchy_current_dir().join("theme/colors.toml")
+    }
+
+    /// `~/.local/state/omarchy/current/theme.name`.
+    pub fn omarchy_theme_name_file(&self) -> PathBuf {
+        self.omarchy_current_dir().join("theme.name")
+    }
+
+    fn omarchy_current_dir(&self) -> PathBuf {
+        self.state_dir
+            .parent()
+            .map(|p| p.join("omarchy/current"))
+            .unwrap_or_else(|| self.state_dir.join("omarchy/current"))
     }
 
     pub fn icon_cache_dir(&self) -> PathBuf {

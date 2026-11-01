@@ -147,6 +147,7 @@ dependencies = [
  "dirs",
  "flate2",
  "hex",
+ "libc",
  "percent-encoding",
  "semver",
  "serde",

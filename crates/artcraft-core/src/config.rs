@@ -24,6 +24,28 @@ pub struct Config {
     pub require_sha256sums: bool,
     /// Also install the 1024 px PNG icon from the app's repository.
     pub install_1024_icons: bool,
+    /// Number of versions kept per app (the active one plus older rollback
+    /// targets). The rest are pruned after a successful install.
+    pub keep_versions: u64,
+    /// How many release lookups may run at the same time.
+    pub parallel_checks: u64,
+    /// Network attempts (including the first one) for transient failures.
+    pub network_retries: u64,
+    /// Verify GitHub/Sigstore provenance attestations with `gh`, when the
+    /// release has them.
+    pub verify_attestations: bool,
+    /// Fail when a release has no GitHub attestation.
+    pub require_attestations: bool,
+    /// Verify a detached signature over `SHA256SUMS.txt` when one exists.
+    pub verify_signed_manifest: bool,
+    /// Fail when `SHA256SUMS.txt` is not signed.
+    pub require_signed_manifest: bool,
+    /// Fail when a release has no GPG signature for the artifact.
+    pub require_gpg_signature: bool,
+    /// Optional dedicated GPG keyring. Empty means the user's default keyring.
+    pub gpg_keyring: String,
+    /// Follow the active Omarchy theme instead of the built-in palette.
+    pub follow_omarchy_theme: bool,
     pub vt: VtConfig,
     /// UI language for the hub (`de` or `en`). Only `de` is complete today.
     pub language: String,
@@ -53,6 +75,16 @@ impl Default for Config {
             check_interval_minutes: 60,
             require_sha256sums: true,
             install_1024_icons: true,
+            keep_versions: 2,
+            parallel_checks: 4,
+            network_retries: 3,
+            verify_attestations: true,
+            require_attestations: false,
+            verify_signed_manifest: true,
+            require_signed_manifest: false,
+            require_gpg_signature: false,
+            gpg_keyring: String::new(),
+            follow_omarchy_theme: true,
             vt: VtConfig::default(),
             language: "en".to_string(),
         }
@@ -87,7 +119,7 @@ impl Config {
         fs::create_dir_all(&paths.config_dir)?;
         let body = toml::to_string_pretty(self).map_err(|e| Error::Config(e.to_string()))?;
         let text = format!(
-            "# ArtCraft Hub – Konfiguration\n\
+            "# ArtCraft Hub – configuration\n\
              # This file contains secrets and is written with mode 0600.\n\n{body}"
         );
         let path = paths.config_file();
@@ -107,9 +139,14 @@ impl Config {
         Ok(())
     }
 
-    fn normalize(&mut self) {
+    /// Clamps values into their supported ranges and trims free-form fields.
+    pub fn normalize(&mut self) {
         self.metadata_cache_minutes = self.metadata_cache_minutes.clamp(5, 24 * 60);
         self.check_interval_minutes = self.check_interval_minutes.clamp(5, 24 * 60);
+        self.keep_versions = self.keep_versions.clamp(1, 10);
+        self.parallel_checks = self.parallel_checks.clamp(1, 8);
+        self.network_retries = self.network_retries.clamp(1, 6);
+        self.gpg_keyring = self.gpg_keyring.trim().to_string();
         self.vt.min_interval_seconds = self.vt.min_interval_seconds.clamp(1, 120);
         self.vt.cache_days = self.vt.cache_days.clamp(1, 365);
         self.vt.poll_seconds = self.vt.poll_seconds.clamp(10, 300);
@@ -146,6 +183,14 @@ impl Config {
 
     pub fn metadata_ttl_secs(&self) -> i64 {
         (self.metadata_cache_minutes * 60) as i64
+    }
+
+    pub fn network_attempts(&self) -> u32 {
+        self.network_retries.clamp(1, 6) as u32
+    }
+
+    pub fn keeps_versions(&self) -> usize {
+        self.keep_versions.clamp(1, 10) as usize
     }
 }
 
