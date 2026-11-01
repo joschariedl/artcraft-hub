@@ -86,7 +86,7 @@ Panel {
     try {
       var data = JSON.parse(text)
       if (!data || Number(data.schema) !== 2 || !Array.isArray(data.apps))
-        throw new Error("unbekanntes Format")
+        throw new Error("unknown format")
       root.status = data
       root.error = ""
       root.loadedAt = Date.now()

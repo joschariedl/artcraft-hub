@@ -28,7 +28,7 @@ for arg in "$@"; do
     --apps) remove_apps=1 ;;
     --purge) purge=1 ;;
     -h|--help) usage; exit 0 ;;
-    *) echo "Unbekannte Option: $arg" >&2; usage >&2; exit 2 ;;
+    *) echo "Unknown option: $arg" >&2; usage >&2; exit 2 ;;
   esac
 done
 
@@ -36,7 +36,7 @@ ctl="${HOME}/.local/bin/artcraftctl"
 
 if (( remove_apps )); then
   if [[ -x "$ctl" ]]; then
-    echo "==> Entferne installierte ArtCraft-Apps"
+    echo "==> Removing installed ArtCraft apps"
     for app in photocraft vectorcraft filmcraft lightcraft pdfcraft effectcraft \
                designcraft figcraft wordcraft soundcraft deckcraft cadcraft gridcraft; do
       "$ctl" uninstall "$app" --yes || true
@@ -46,14 +46,14 @@ if (( remove_apps )); then
   fi
 fi
 
-echo "==> Entferne Omarchy-Plugin"
+echo "==> Removing Omarchy plugin"
 if command -v omarchy >/dev/null 2>&1; then
   omarchy plugin remove "$PLUGIN_ID" --yes >/dev/null 2>&1 || true
 fi
 rm -rf "${HOME}/.config/omarchy/plugins/${PLUGIN_ID}"
 omarchy-shell shell rescanPlugins >/dev/null 2>&1 || true
 
-echo "==> Entferne Programme, Icon und Desktop-Datei"
+echo "==> Removing programs, icon and desktop file"
 rm -f "${HOME}/.local/bin/artcraft-hub" "${HOME}/.local/bin/artcraftctl"
 rm -f "${HOME}/.local/share/applications/artcraft-hub.desktop"
 rm -f "${HOME}/.local/share/icons/hicolor/scalable/apps/artcraft-hub.svg"
@@ -65,5 +65,5 @@ if (( purge )); then
   rm -rf "$CONFIG_DIR" "$STATE_DIR" "$CACHE_DIR"
 fi
 
-printf '\nFertig.\n'
+printf '\nDone.\n'
 (( remove_apps )) || echo "Note: installed apps under ~/.local/opt/artcraft are kept."

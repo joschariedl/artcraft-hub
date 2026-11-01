@@ -1,26 +1,25 @@
-# ArtCraft Hub – Omarchy-Bar-Plugin
+# ArtCraft Hub – Omarchy bar plugin
 
-Kleine Bar-Anzeige für die 13 ArtCraft-Apps. Ein Pinsel-Symbol oben rechts
-wird farbig, sobald ein Update bereitsteht; ein Klick öffnet die Übersicht.
+Small bar indicator for the 13 ArtCraft apps. A paintbrush icon in the top right
+turns coloured as soon as an update is available; a click opens the overview.
 
-## Was es macht
+## What it does
 
-- liest `artcraftctl status --json` (Standard: Cache, damit die Bar nicht bei
-  jedem Timer-Tick das Netzwerk belastet)
-- zeigt installierte Version → neue Version je App
-- startet `artcraftctl upgrade …` in einem schwebenden Terminal. Dort laufen
-  SHA-256-Abgleich und VirusTotal-Prüfung sichtbar mit; ohne gültigen
-  VirusTotal-Key wird nichts installiert.
-- warnt, wenn kein VirusTotal-Key hinterlegt ist, und bietet den Sprung in
-  den Hub an
+- reads `artcraftctl status --json` (cached by default, so the bar does not hit
+  the network on every timer tick)
+- shows installed version → new version per app
+- starts `artcraftctl upgrade …` in a floating terminal. The SHA-256 comparison
+  and VirusTotal check run visibly there; without a valid VirusTotal key nothing
+  is installed.
+- warns when no VirusTotal key is configured and offers a jump into the hub
 
-Die Abfrage läuft alle 30 Minuten sowie beim Öffnen des Popups. Der Knopf
-„Neu prüfen“ (oder die Taste `r`) erzwingt eine frische GitHub-Abfrage.
+The query runs every 30 minutes and when the popup opens. The "Check now" button
+(or the `r` key) forces a fresh GitHub query.
 
-## Abhängigkeiten
+## Dependencies
 
-- `artcraftctl` in `~/.local/bin` (wird von `scripts/install.sh` installiert)
-- `artcraft-hub` in `~/.local/bin` für den Knopf „Hub“
+- `artcraftctl` in `~/.local/bin` (installed by `scripts/install.sh`)
+- `artcraft-hub` in `~/.local/bin` for the "Hub" button
 
 ## Installation
 
@@ -28,9 +27,9 @@ Die Abfrage läuft alle 30 Minuten sowie beim Öffnen des Popups. Der Knopf
 ./scripts/install.sh
 ```
 
-Das Skript kopiert das Plugin nach
-`~/.config/omarchy/plugins/derfleischmann.artcraft` und aktiviert es in der
-rechten Bar-Sektion. Manuell:
+The script copies the plugin to
+`~/.config/omarchy/plugins/derfleischmann.artcraft` and activates it in the
+right bar section. Manually:
 
 ```bash
 omarchy plugin validate ~/.config/omarchy/plugins/derfleischmann.artcraft
@@ -38,16 +37,16 @@ omarchy-shell shell rescanPlugins
 omarchy plugin enable derfleischmann.artcraft right
 ```
 
-## Bedienung
+## Usage
 
-| Aktion | Wirkung |
+| Action | Effect |
 |---|---|
-| Linksklick | Popup öffnen/schließen |
-| Mittelklick | Popup öffnen |
-| `r` im Popup | Neu prüfen |
-| `o` im Popup | Hub öffnen |
-| Enter im Popup | Alle Updates starten (bzw. neu prüfen) |
-| Esc | Schließen |
+| Left click | Open/close popup |
+| Middle click | Open popup |
+| `r` in popup | Re-check |
+| `o` in popup | Open hub |
+| Enter in popup | Start all updates (or re-check) |
+| Esc | Close |
 
 IPC:
 

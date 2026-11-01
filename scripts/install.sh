@@ -22,9 +22,9 @@ Usage: scripts/install.sh [options]
   --debug         Debug build instead of release
   --no-plugin     Do not install the Omarchy bar plugin
   --no-enable     Install the plugin but do not add it to the bar
-  -h, --help      Diese Hilfe
+  -h, --help      This help
 
-Nach der Installation: artcraftctl config --set-vt-key <KEY>
+After installation: artcraftctl config --set-vt-key <KEY>
 EOF
 }
 
@@ -34,7 +34,7 @@ for arg in "$@"; do
     --no-plugin) install_plugin=0; enable_plugin=0 ;;
     --no-enable) enable_plugin=0 ;;
     -h|--help) usage; exit 0 ;;
-    *) echo "Unbekannte Option: $arg" >&2; usage >&2; exit 2 ;;
+    *) echo "Unknown option: $arg" >&2; usage >&2; exit 2 ;;
   esac
 done
 
@@ -50,19 +50,19 @@ if [[ -z "$cargo_bin" ]]; then
   fi
 fi
 
-printf '\n==> Baue ArtCraft Hub (%s)\n' "$profile"
+printf '\n==> Building ArtCraft Hub (%s)\n' "$profile"
 build_args=(build --workspace)
 [[ "$profile" == "release" ]] && build_args+=(--release)
 (cd "$REPO_ROOT" && "$cargo_bin" "${build_args[@]}")
 
 readonly TARGET_DIR="${REPO_ROOT}/target/${profile}"
 
-printf '\n==> Installiere Programme nach %s\n' "$BIN_DIR"
+printf '\n==> Installing programs to %s\n' "$BIN_DIR"
 install -d -m 0755 "$BIN_DIR"
 install -m 0755 "${TARGET_DIR}/artcraftctl" "${BIN_DIR}/artcraftctl"
 install -m 0755 "${TARGET_DIR}/artcraft-hub" "${BIN_DIR}/artcraft-hub"
 
-printf '==> Installiere Shell-Completions\n'
+printf '==> Installing shell completions\n'
 for shell in bash zsh fish; do
   case "$shell" in
     bash) dir="${HOME}/.local/share/bash-completion/completions"; file="artcraftctl" ;;
@@ -73,7 +73,7 @@ for shell in bash zsh fish; do
   "${BIN_DIR}/artcraftctl" completions "$shell" > "${dir}/${file}" 2>/dev/null || true
 done
 
-printf '==> Installiere Icon und Desktop-Datei\n'
+printf '==> Installing icon and desktop file\n'
 install -d -m 0755 "$ICON_DIR" "$APPLICATIONS_DIR"
 install -m 0644 "${REPO_ROOT}/assets/artcraft-hub.svg" "${ICON_DIR}/artcraft-hub.svg"
 
@@ -81,8 +81,8 @@ cat >"${APPLICATIONS_DIR}/artcraft-hub.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=ArtCraft Hub
-GenericName=ArtCraft-Apps verwalten
-Comment=Die 13 ArtCraft-Apps installieren und aktualisieren
+GenericName=Manage ArtCraft apps
+Comment=Install and update the 13 ArtCraft apps
 Exec=${BIN_DIR}/artcraft-hub
 TryExec=${BIN_DIR}/artcraft-hub
 Icon=artcraft-hub
@@ -97,7 +97,7 @@ update-desktop-database "$APPLICATIONS_DIR" >/dev/null 2>&1 || true
 gtk-update-icon-cache -f -t "${HOME}/.local/share/icons/hicolor" >/dev/null 2>&1 || true
 
 if (( install_plugin )); then
-  printf '\n==> Installiere Omarchy-Plugin nach %s\n' "$PLUGIN_DIR"
+  printf '\n==> Installing Omarchy plugin to %s\n' "$PLUGIN_DIR"
   if ! command -v omarchy-shell >/dev/null 2>&1; then
     echo "Note: omarchy-shell not found – the plugin is copied but not activated." >&2
     enable_plugin=0
@@ -112,7 +112,7 @@ if (( install_plugin )); then
 
   if command -v omarchy >/dev/null 2>&1; then
     if omarchy plugin validate "$PLUGIN_DIR" >/dev/null 2>&1; then
-      echo "    Manifest gültig."
+      echo "    Manifest valid."
     else
       echo "Warning: omarchy plugin validate reports issues for $PLUGIN_DIR" >&2
     fi
@@ -134,9 +134,9 @@ for plugin in plugins:
         break
 ' 2>/dev/null || true)
     if [[ "$plugin_enabled" == "yes" ]]; then
-      echo "    Plugin ist bereits aktiv."
+      echo "    Plugin is already active."
     elif omarchy plugin enable "$PLUGIN_ID" right >/dev/null 2>&1; then
-      echo "    Plugin in der rechten Bar-Sektion aktiviert."
+      echo "    Plugin activated in the right bar section."
     else
       echo "Note: the plugin could not be activated automatically." >&2
       echo "         Manually: omarchy plugin enable $PLUGIN_ID right" >&2
@@ -144,7 +144,7 @@ for plugin in plugins:
   fi
 fi
 
-printf '\n==> Fertig.\n\n'
+printf '\n==> Done.\n\n'
 "${BIN_DIR}/artcraftctl" doctor || true
 cat <<EOF
 
