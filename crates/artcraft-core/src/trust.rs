@@ -237,18 +237,52 @@ fn verify_gpg_file(
             .arg(cfg.gpg_keyring.trim());
     }
     let output = command
+        .arg("--status-fd")
+        .arg("1")
         .arg("--verify")
         .arg(&sig_path)
         .arg(content)
         .output()
         .map_err(|e| Error::SignatureFailed(e.to_string()))?;
-    if output.status.success() {
-        Ok(TrustState::Verified)
-    } else {
-        Err(Error::SignatureFailed(shorten(&String::from_utf8_lossy(
+    if !output.status.success() {
+        return Err(Error::SignatureFailed(shorten(&String::from_utf8_lossy(
             &output.stderr,
-        ))))
+        ))));
     }
+
+    if !cfg.gpg_trusted_fingerprints.is_empty() {
+        let fingerprint = parse_validsig(&output.stdout);
+        let Some(fingerprint) = fingerprint else {
+            return Err(Error::SignatureFailed(
+                "gpg did not report a signer fingerprint".into(),
+            ));
+        };
+        let trusted: Vec<String> = cfg
+            .gpg_trusted_fingerprints
+            .iter()
+            .map(|f| crate::config::normalize_fingerprint(f))
+            .collect();
+        if !trusted.iter().any(|t| {
+            fingerprint.ends_with(t) || t.ends_with(&fingerprint)
+        }) {
+            return Err(Error::SignatureFailed(format!(
+                "signer fingerprint {fingerprint} is not trusted"
+            )));
+        }
+    }
+    Ok(TrustState::Verified)
+}
+
+
+fn parse_validsig(stdout: &[u8]) -> Option<String> {
+    let text = String::from_utf8_lossy(stdout);
+    for line in text.lines() {
+        if let Some(rest) = line.strip_prefix("[GNUPG:] VALIDSIG ") {
+            let fingerprint = rest.split_whitespace().next()?;
+            return Some(crate::config::normalize_fingerprint(fingerprint));
+        }
+    }
+    None
 }
 
 fn command_exists(name: &str) -> bool {

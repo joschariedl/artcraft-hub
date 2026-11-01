@@ -44,6 +44,9 @@ pub struct Config {
     pub require_gpg_signature: bool,
     /// Optional dedicated GPG keyring. Empty means the user's default keyring.
     pub gpg_keyring: String,
+    /// Trusted GPG key fingerprints (hex, spaces allowed). Empty means any
+    /// valid signature is accepted.
+    pub gpg_trusted_fingerprints: Vec<String>,
     /// Follow the active Omarchy theme instead of the built-in palette.
     pub follow_omarchy_theme: bool,
     pub vt: VtConfig,
@@ -84,6 +87,7 @@ impl Default for Config {
             require_signed_manifest: false,
             require_gpg_signature: false,
             gpg_keyring: String::new(),
+            gpg_trusted_fingerprints: Vec::new(),
             follow_omarchy_theme: true,
             vt: VtConfig::default(),
             language: "en".to_string(),
@@ -147,6 +151,12 @@ impl Config {
         self.parallel_checks = self.parallel_checks.clamp(1, 8);
         self.network_retries = self.network_retries.clamp(1, 6);
         self.gpg_keyring = self.gpg_keyring.trim().to_string();
+        self.gpg_trusted_fingerprints = self
+            .gpg_trusted_fingerprints
+            .iter()
+            .map(|f| normalize_fingerprint(f))
+            .filter(|f| !f.is_empty())
+            .collect();
         self.vt.min_interval_seconds = self.vt.min_interval_seconds.clamp(1, 120);
         self.vt.cache_days = self.vt.cache_days.clamp(1, 365);
         self.vt.poll_seconds = self.vt.poll_seconds.clamp(10, 300);
@@ -192,6 +202,13 @@ impl Config {
     pub fn keeps_versions(&self) -> usize {
         self.keep_versions.clamp(1, 10) as usize
     }
+}
+
+pub fn normalize_fingerprint(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .map(|c| c.to_ascii_uppercase())
+        .collect()
 }
 
 pub fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {

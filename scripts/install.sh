@@ -62,6 +62,17 @@ install -d -m 0755 "$BIN_DIR"
 install -m 0755 "${TARGET_DIR}/artcraftctl" "${BIN_DIR}/artcraftctl"
 install -m 0755 "${TARGET_DIR}/artcraft-hub" "${BIN_DIR}/artcraft-hub"
 
+printf '==> Installiere Shell-Completions\n'
+for shell in bash zsh fish; do
+  case "$shell" in
+    bash) dir="${HOME}/.local/share/bash-completion/completions"; file="artcraftctl" ;;
+    zsh)  dir="${HOME}/.local/share/zsh/site-functions"; file="_artcraftctl" ;;
+    fish) dir="${HOME}/.config/fish/completions"; file="artcraftctl.fish" ;;
+  esac
+  install -d -m 0755 "$dir"
+  "${BIN_DIR}/artcraftctl" completions "$shell" > "${dir}/${file}" 2>/dev/null || true
+done
+
 printf '==> Installiere Icon und Desktop-Datei\n'
 install -d -m 0755 "$ICON_DIR" "$APPLICATIONS_DIR"
 install -m 0644 "${REPO_ROOT}/assets/artcraft-hub.svg" "${ICON_DIR}/artcraft-hub.svg"

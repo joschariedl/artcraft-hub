@@ -19,6 +19,7 @@ artcraft-core = { path = "crates/artcraft-core" }
 anyhow = "1.0"
 base64 = "0.22"
 clap = { version = "4.6", features = ["derive"] }
+clap_complete = "4.6"
 dirs = "7.0"
 flate2 = "1.1"
 hex = "0.4"

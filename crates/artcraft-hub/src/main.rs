@@ -183,6 +183,7 @@ struct SettingsDraft {
     require_signed_manifest: bool,
     require_gpg_signature: bool,
     gpg_keyring: String,
+    gpg_trusted_fingerprints: String,
 }
 
 impl SettingsDraft {
@@ -202,6 +203,7 @@ impl SettingsDraft {
             require_signed_manifest: cfg.require_signed_manifest,
             require_gpg_signature: cfg.require_gpg_signature,
             gpg_keyring: cfg.gpg_keyring.clone(),
+            gpg_trusted_fingerprints: cfg.gpg_trusted_fingerprints.join(", "),
         }
     }
 
@@ -220,6 +222,13 @@ impl SettingsDraft {
         cfg.require_signed_manifest = self.require_signed_manifest;
         cfg.require_gpg_signature = self.require_gpg_signature;
         cfg.gpg_keyring = self.gpg_keyring.trim().to_string();
+        cfg.gpg_trusted_fingerprints = self
+            .gpg_trusted_fingerprints
+            .split(|c: char| matches!(c, ',' | '\n' | ';'))
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect();
     }
 }
 
@@ -1512,6 +1521,11 @@ impl HubApp {
                 ui.add(
                     egui::TextEdit::singleline(&mut self.settings.gpg_keyring)
                         .hint_text("GPG keyring path (empty = default)")
+                        .desired_width(420.0),
+                );
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.settings.gpg_trusted_fingerprints)
+                        .hint_text("Trusted GPG fingerprints (comma separated)")
                         .desired_width(420.0),
                 );
             });

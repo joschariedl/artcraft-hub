@@ -5,7 +5,8 @@ use std::io::{BufRead, IsTerminal, Write};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{generate, Shell};
 use serde::Serialize;
 
 use artcraft_core::config::Config;
@@ -147,6 +148,11 @@ enum Command {
         /// Dedicated GPG keyring (empty = user's default)
         #[arg(long)]
         gpg_keyring: Option<String>,
+    },
+    /// Generate shell completion script (bash, zsh, fish, powershell, elvish)
+    Completions {
+        /// Target shell
+        shell: Shell,
     },
 }
 
@@ -476,6 +482,11 @@ fn run() -> Result<ExitCode, Box<dyn std::error::Error>> {
                     if cfg.follow_omarchy_theme { "yes" } else { "no" }
                 );
             }
+            Ok(ExitCode::SUCCESS)
+        }
+        Command::Completions { shell } => {
+            let mut cmd = Cli::command();
+            generate(shell, &mut cmd, "artcraftctl", &mut std::io::stdout());
             Ok(ExitCode::SUCCESS)
         }
     }
