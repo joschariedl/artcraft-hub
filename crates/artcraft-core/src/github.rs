@@ -287,7 +287,7 @@ pub fn plan_from_parts(
 ) -> Result<ReleasePlan> {
     if !valid_tag(&release.tag) {
         return Err(Error::InvalidUrl(format!(
-            "unbrauchbarer Release-Tag {:?}",
+            "invalid release tag {:?}",
             release.tag
         )));
     }

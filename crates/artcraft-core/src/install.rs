@@ -81,7 +81,7 @@ pub fn extract_archive(archive: &Path, dest: &Path) -> Result<()> {
     }
 
     if entries == 0 {
-        return Err(Error::UnsafeArchive("Archiv ist leer".into()));
+        return Err(Error::UnsafeArchive("Archive is empty".into()));
     }
     Ok(())
 }
@@ -90,7 +90,7 @@ pub fn extract_archive(archive: &Path, dest: &Path) -> Result<()> {
 /// directory. The first call sets `top`.
 pub fn checked_relative(path: &Path, top: &mut Option<String>) -> Result<PathBuf> {
     if path.as_os_str().is_empty() {
-        return Err(Error::UnsafeArchive("leerer Pfad im Archiv".into()));
+        return Err(Error::UnsafeArchive("empty path in archive".into()));
     }
     let text = path.to_string_lossy();
     if text.chars().any(|c| c.is_control() || c == '\\') {
@@ -113,14 +113,14 @@ pub fn checked_relative(path: &Path, top: &mut Option<String>) -> Result<PathBuf
             | Component::RootDir
             | Component::Prefix(_) => {
                 return Err(Error::UnsafeArchive(format!(
-                    "unsicherer Pfad im Archiv: {text}"
+                    "unsafe path in archive: {text}"
                 )));
             }
         }
     }
 
     let Some((first, rest)) = normal.split_first() else {
-        return Err(Error::UnsafeArchive("leerer Pfad im Archiv".into()));
+        return Err(Error::UnsafeArchive("empty path in archive".into()));
     };
     match top {
         Some(expected) if expected != first => {
@@ -651,7 +651,7 @@ fn install_highres_icon(
             _ => continue,
         }
     }
-    Err(Error::Install("kein 1024-px-PNG im Repository gefunden".into()))
+    Err(Error::Install("no 1024 px PNG found in the repository".into()))
 }
 
 /// Keeps the active version plus the newest `keep_count - 1` rollback targets.

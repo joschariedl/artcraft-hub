@@ -124,6 +124,12 @@ Panel {
     root.bar.run("\"" + root.homeDir + "/.local/bin/" + id + "\"")
   }
 
+  function openHub() {
+    if (!root.bar) return
+    root.bar.run("\"" + root.hubPath + "\"")
+    root.close()
+  }
+
   function appendUpgradeLog(text) {
     if (text && text.trim() !== "") root.upgradeLog += text + "\n"
   }
@@ -353,7 +359,6 @@ Panel {
                   bordered: true
                   enabled: !root.actionRunning
                   onClicked: root.runAction("skip " + modelData.id + " " + modelData.latest_tag)
-                }
                 }
               }
             }
@@ -585,7 +590,7 @@ Panel {
 
           Button {
             text: "Check now"
-            tooltipText: "Jetzt nach neuen Releases suchen (r)"
+            tooltipText: "Check for new releases now (r)"
             fontSize: Style.font.bodySmall
             foreground: root.contentForeground
             fontFamily: root.contentFontFamily
@@ -635,7 +640,7 @@ Panel {
     onExited: function(exitCode) {
       if (exitCode !== 0 && root.loading) {
         root.loading = false
-        root.error = "artcraftctl ist nicht erreichbar (Exit " + exitCode + ")"
+        root.error = "artcraftctl is not reachable (exit " + exitCode + ")"
         statusGuard.stop()
       }
     }

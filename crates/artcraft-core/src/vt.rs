@@ -430,7 +430,7 @@ impl VtClient {
             .and_then(Value::as_str)
             .map(str::to_string)
             .ok_or_else(|| {
-                Error::VirusTotal("Antwort auf den URL-Scan enthielt keine Analyse-ID".into())
+                Error::VirusTotal("URL scan response contained no analysis ID".into())
             })
     }
 
@@ -508,11 +508,11 @@ fn api_error(reply: &net::Reply) -> Error {
         .unwrap_or_else(|| reply.body_text());
     let message = crate::github::truncate(message.trim(), 300);
     match reply.status {
-        401 => Error::VirusTotal("API-Key wurde abgelehnt (401)".into()),
+        401 => Error::VirusTotal("API key was rejected (401)".into()),
         429 => Error::VirusTotal(
             "Quota exhausted (Public API: 4 requests/minute, 500/day)".into(),
         ),
-        403 => Error::VirusTotal(format!("Zugriff verweigert: {message}")),
+        403 => Error::VirusTotal(format!("Access denied: {message}")),
         status => Error::VirusTotal(format!("HTTP {status}: {message}")),
     }
 }

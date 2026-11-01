@@ -93,6 +93,6 @@ BarWidget {
     width: Style.space(5)
     height: width
     radius: width / 2
-    color: root.bar ? root.bar.urgent : Commons.Color.urgent
+    color: root.bar ? root.bar.urgent : Color.urgent
   }
 }

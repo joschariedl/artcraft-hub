@@ -121,12 +121,13 @@ QML bar widget. Files: `manifest.json`, `BarWidget.qml`, `ArtcraftPanel.qml`, `R
 
 - `BarWidget.qml`: BarIconButton with paintbrush glyph `\uf1fc`. Properties: opened, updateCount, vtMissing.
   IPC handler: refresh, open, close, show, hide, toggle.
+  - Imports `qs.Commons` without an alias, so use `Color.*`; `Commons.Color.*` is a ReferenceError.
 - `ArtcraftPanel.qml`: KeyboardPanel. Reads `artcraftctl status --json` via Process + StdioCollector.
   - `refresh(force)` → `status` (cached) or `check` (network).
   - `upgradeAll()` / `upgradeOne(id)` → runs `artcraftctl upgrade ... --yes` in a background Process,
     captures stdout/stderr into `upgradeLog`, shows spinner + scrollable log while upgrading.
   - `openApp(id)` → launches `~/.local/bin/<id>`.
-  - `openHub()` → launches `artcraft-hub`.
+  - `openHub()` → launches `artcraft-hub` via `bar.run` and closes the popup.
   - Keyboard: `r` refresh, `o` open hub, `Enter` update all, click app name → open app.
   - Timer: 30 min polling (triggeredOnStart).
   - Footer: shortcuts hint.
@@ -172,7 +173,7 @@ QML bar widget. Files: `manifest.json`, `BarWidget.qml`, `ArtcraftPanel.qml`, `R
 - Progress messages go through `progress::message()` / `Progress::Message`.
 - CLI prints progress to stderr.
 - Rust edition 2021, rust-version 1.85. Clippy clean (0 warnings).
-- Tests: 30+ in artcraft-core. Run `cargo test --workspace`.
+- Tests: 44 in artcraft-core. Run `cargo test --workspace`.
 
 ## Build & install
 
@@ -189,6 +190,13 @@ Uninstall: `./scripts/uninstall.sh [--apps] [--purge]`.
 
 - `gh` must be authenticated for pushing (`gh auth login`).
 - Omarchy plugin requires `omarchy-shell` in PATH.
+- **QML is not hot-reloaded reliably.** Quickshell can keep the compiled component after a file
+  edit: the bar icon stays, but the popup no longer reacts. Validate the syntax with
+  `/usr/lib/qt6/bin/qmllint plugins/derfleischmann.artcraft/ArtcraftPanel.qml` (import warnings
+  for `qs.*` are expected outside the shell) and run `omarchy-restart-shell` after plugin edits.
+  Check `journalctl --user -n 100 | grep -i artcraft` for `Syntax error` / `ReferenceError`.
+- A single extra `}` or a missing function in `ArtcraftPanel.qml` breaks the whole panel at load
+  time; the bar widget still renders because it is a separate component.
 - FigCraft (and others) show "no release" only on GitHub rate limit (60 req/h without token).
 - The icon cache (`~/.cache/artcraft-hub/icons/`) is populated from embedded data; no network needed.
 - `update-desktop-database` and `gtk-update-icon-cache` should be installed for menu integration.

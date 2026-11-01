@@ -224,7 +224,7 @@ impl SettingsDraft {
         cfg.gpg_keyring = self.gpg_keyring.trim().to_string();
         cfg.gpg_trusted_fingerprints = self
             .gpg_trusted_fingerprints
-            .split(|c: char| matches!(c, ',' | '\n' | ';'))
+            .split([',', '\n', ';'])
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .map(str::to_string)

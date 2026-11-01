@@ -396,6 +396,11 @@ Check `omarchy plugin list`; activate with
 `omarchy plugin enable derfleischmann.artcraft right`. The position can then be moved in
 `~/.config/omarchy/shell.json` under `bar.layout.right`.
 
+**Plugin icon is visible but the popup does not react.**
+A QML error or a stale compiled plugin can leave the icon in place while the panel fails to
+load. Restart the shell with `omarchy-restart-shell` and check
+`journalctl --user -n 100 | grep -i artcraft` for `Syntax error` or `ReferenceError`.
+
 **GUI does not start under Wayland.**
 Check `WAYLAND_DISPLAY` (`echo $WAYLAND_DISPLAY`). The GUI uses eframe/glow; on systems without
 suitable GL drivers try `LIBGL_ALWAYS_SOFTWARE=1 artcraft-hub`.
@@ -407,7 +412,7 @@ suitable GL drivers try `LIBGL_ALWAYS_SOFTWARE=1 artcraft-hub`.
 ```bash
 cargo build --workspace              # debug
 cargo build --workspace --release    # release
-cargo test --workspace               # tests (30+ in artcraft-core)
+cargo test --workspace               # tests (44 in artcraft-core)
 cargo clippy --workspace --all-targets
 ```
 
