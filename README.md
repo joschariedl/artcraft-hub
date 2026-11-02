@@ -51,6 +51,7 @@ All user-facing text is in English.
 | EffectCraft | Motion graphics and VFX | `storytold/effectcraft` |
 | DesignCraft | Page layout and publishing | `storytold/designcraft` |
 | FigCraft | Interface design and prototyping | `storytold/figcraft` |
+| TextureCraft | 3D texture painting | `storytold/texturecraft` |
 | WordCraft | Word processing and document design | `storytold/wordcraft` |
 | SoundCraft | Record, edit and mix audio | `storytold/soundcraft` |
 | DeckCraft | Presentations and slideshows | `storytold/deckcraft` |
