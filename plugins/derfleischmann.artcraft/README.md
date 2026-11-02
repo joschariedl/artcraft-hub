@@ -1,6 +1,6 @@
 # ArtCraft Hub – Omarchy bar plugin
 
-Small bar indicator for the 13 ArtCraft apps. A paintbrush icon in the top right
+Small bar indicator for the 14 Craft Apps supported by ArtCraft Hub. A paintbrush icon in the top right
 turns coloured as soon as an update is available; a click opens the overview.
 
 ## What it does

@@ -5,7 +5,7 @@ the architecture, data flow, key decisions, file layout and conventions so chang
 
 ## Project overview
 
-ArtCraft Hub is a native installer/updater for the 13 ArtCraft apps
+ArtCraft Hub is a native installer/updater for the 14 Craft Apps supported by ArtCraft Hub
 (https://getartcraft.com/apps). It targets Arch Linux / Omarchy under Wayland. It downloads the
 official `linux-x86_64.tar.gz` releases from GitHub, verifies them (SHA-256 + VirusTotal + optional
 GPG), installs them without root into `~/.local`, creates `.desktop` entries with high-resolution
@@ -45,8 +45,8 @@ artcraft-hub/
 Shared library. No UI dependencies. Used by both GUI and CLI.
 
 Key modules:
-- `catalog.rs` – `AppDef`, `SUITE: [AppDef; 13]`, `by_id()`, `release_arch()`, `icon_paths()`.
-  - 13 apps in website order. pdfcraft has stem `printcraft`.
+- `catalog.rs` – `AppDef`, `SUITE: [AppDef; 14]`, `by_id()`, `release_arch()`, `icon_paths()`.
+  - 14 apps in website order (incl. TextureCraft). pdfcraft has stem `printcraft`.
   - Bugfix: `icon_paths()` iterates `once(id).chain(stems)` so every app has its 1024 px icon path.
 - `config.rs` – `Config` (TOML, 0600). Fields: github_token, virustotal_api_key, metadata_cache_minutes,
   check_interval_minutes, require_sha256sums, install_1024_icons, keep_versions, parallel_checks,
@@ -225,3 +225,4 @@ Uninstall: `./scripts/uninstall.sh [--apps] [--purge]`.
 - Omarchy theme integration, GUI filters and keyboard shortcuts, plugin schema v2.
 - Bugfix: the update-available marker in the app list no longer renders as a tofu box. It is now
   a painter-drawn upward arrow; `→` in the update dialog is shown as `->` inside egui.
+- Added TextureCraft (3D texture painting) to the supported app suite (14 apps total).

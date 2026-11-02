@@ -2015,6 +2015,7 @@ fn embedded_icon(id: &str) -> Option<&'static [u8]> {
         "effectcraft" => Some(include_bytes!("../../../assets/icons/effectcraft.png")),
         "designcraft" => Some(include_bytes!("../../../assets/icons/designcraft.png")),
         "figcraft" => Some(include_bytes!("../../../assets/icons/figcraft.png")),
+        "texturecraft" => Some(include_bytes!("../../../assets/icons/texturecraft.png")),
         "wordcraft" => Some(include_bytes!("../../../assets/icons/wordcraft.png")),
         "soundcraft" => Some(include_bytes!("../../../assets/icons/soundcraft.png")),
         "deckcraft" => Some(include_bytes!("../../../assets/icons/deckcraft.png")),
