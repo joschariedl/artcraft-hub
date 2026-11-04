@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "derfleischmann",
   "license": "MIT",
-  "description": "Update indicator for the 14 Craft Apps supported by ArtCraft Hub, with hash- and VirusTotal-verified upgrades",
+  "description": "Update indicator for the 15 Craft Apps supported by ArtCraft Hub, with hash- and VirusTotal-verified upgrades",
   "kinds": [
     "bar-widget"
   ],

@@ -65,8 +65,8 @@ const fn app(
     }
 }
 
-/// All 14 apps from getartcraft.com/apps that ArtCraft Hub supports, in website order.
-pub const SUITE: [AppDef; 14] = [
+/// All 15 apps from getartcraft.com/apps that ArtCraft Hub supports, in website order.
+pub const SUITE: [AppDef; 15] = [
     app("photocraft", "PhotoCraft", "Image editing", [0x2f, 0x7b, 0xf5], "storytold/photocraft"),
     app("vectorcraft", "VectorCraft", "Vector illustration", [0xe8, 0x57, 0x3f], "storytold/vectorcraft"),
     app("filmcraft", "FilmCraft", "Video editing, colour and sound", [0x8b, 0x5c, 0xf6], "storytold/filmcraft"),
@@ -79,6 +79,7 @@ pub const SUITE: [AppDef; 14] = [
     app("designcraft", "DesignCraft", "Page layout and publishing", [0x7b, 0xb5, 0x1c], "storytold/designcraft"),
     app("figcraft", "FigCraft", "Interface design and prototyping", [0x02, 0xda, 0x96], "storytold/figcraft"),
     app("texturecraft", "TextureCraft", "3D texture painting", [0xc2, 0x67, 0x2b], "storytold/texturecraft"),
+    app("materialcraft", "MaterialCraft", "Procedural materials", [0x17, 0x8a, 0x9c], "storytold/materialcraft"),
     app("wordcraft", "WordCraft", "Word processing and document design", [0x3f, 0x5f, 0xe0], "storytold/wordcraft"),
     app("soundcraft", "SoundCraft", "Record, edit and mix audio", [0x1f, 0xa5, 0xc9], "storytold/soundcraft"),
     app("deckcraft", "DeckCraft", "Presentations and slideshows", [0xf0, 0x7a, 0x1e], "storytold/deckcraft"),

@@ -1,6 +1,6 @@
 # ArtCraft Hub
 
-A native installer and updater for the 14 Craft Apps supported by ArtCraft Hub –
+A native installer and updater for the 15 Craft Apps supported by ArtCraft Hub –
 built for Arch Linux and [Omarchy](https://omarchy.org) under Wayland.
 
 ArtCraft Hub downloads the official `linux-x86_64.tar.gz` packages straight from the GitHub
@@ -52,13 +52,14 @@ All user-facing text is in English.
 | DesignCraft | Page layout and publishing | `storytold/designcraft` |
 | FigCraft | Interface design and prototyping | `storytold/figcraft` |
 | TextureCraft | 3D texture painting | `storytold/texturecraft` |
+| MaterialCraft | Procedural materials | `storytold/materialcraft` |
 | WordCraft | Word processing and document design | `storytold/wordcraft` |
 | SoundCraft | Record, edit and mix audio | `storytold/soundcraft` |
 | DeckCraft | Presentations and slideshows | `storytold/deckcraft` |
 | CADCraft | CAD and technical drawing | `storytold/cadcraft` |
 | GridCraft | Spreadsheets and data analysis | `storytold/gridcraft` |
 
-All 14 supported apps have public releases. An app shows as "no release" only when GitHub's API limit
+All 15 supported apps have public releases. An app shows as "no release" only when GitHub's API limit
 (60 requests/hour without a token) is reached – the release feed does not include every app,
 so there is no fallback in that case. A GitHub token (settings) fixes it.
 
@@ -203,7 +204,7 @@ helper tools are present.
 artcraft-hub
 ```
 
-Or via the application menu ("ArtCraft Hub"). The UI shows all 14 supported apps with icon, installed
+Or via the application menu ("ArtCraft Hub"). The UI shows all 15 supported apps with icon, installed
 version and the latest available version.
 
 - **Install** – downloads, verifies (SHA-256 + VirusTotal) and installs the current version.
