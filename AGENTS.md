@@ -227,3 +227,5 @@ Uninstall: `./scripts/uninstall.sh [--apps] [--purge]`.
   a painter-drawn upward arrow; `→` in the update dialog is shown as `->` inside egui.
 - Added TextureCraft (3D texture painting) to the supported app suite (14 apps total).
 - Added MaterialCraft (procedural materials) to the supported app suite (15 apps total).
+- GPG verification now warns instead of failing when the signing key is missing from the
+  keyring (unless `require_gpg_signature` is set).
