@@ -229,3 +229,5 @@ Uninstall: `./scripts/uninstall.sh [--apps] [--purge]`.
 - Added MaterialCraft (procedural materials) to the supported app suite (15 apps total).
 - GPG verification now warns instead of failing when the signing key is missing from the
   keyring (unless `require_gpg_signature` is set).
+- Settings view is now compact (two columns) and scrollable; "Open config folder" works on
+  Windows via Explorer.
