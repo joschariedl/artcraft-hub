@@ -5,7 +5,7 @@ the architecture, data flow, key decisions, file layout and conventions so chang
 
 ## Project overview
 
-ArtCraft Hub is a native installer/updater for the 15 Craft Apps supported by ArtCraft Hub
+ArtCraft Hub is a native installer/updater for the 16 Craft Apps supported by ArtCraft Hub
 (https://getartcraft.com/apps). It targets Arch Linux / Omarchy under Wayland. It downloads the
 official `linux-x86_64.tar.gz` releases from GitHub, verifies them (SHA-256 + VirusTotal + optional
 GPG), installs them without root into `~/.local`, creates `.desktop` entries with high-resolution
@@ -45,8 +45,8 @@ artcraft-hub/
 Shared library. No UI dependencies. Used by both GUI and CLI.
 
 Key modules:
-- `catalog.rs` – `AppDef`, `SUITE: [AppDef; 15]`, `by_id()`, `release_arch()`, `icon_paths()`.
-  - 15 apps in website order (incl. TextureCraft, MaterialCraft). pdfcraft has stem `printcraft`.
+- `catalog.rs` – `AppDef`, `SUITE: [AppDef; 16]`, `by_id()`, `release_arch()`, `icon_paths()`.
+  - 16 apps in website order (incl. AniCraft, TextureCraft, MaterialCraft). pdfcraft has stem `printcraft`.
   - Bugfix: `icon_paths()` iterates `once(id).chain(stems)` so every app has its 1024 px icon path.
 - `config.rs` – `Config` (TOML, 0600). Fields: github_token, virustotal_api_key, metadata_cache_minutes,
   check_interval_minutes, require_sha256sums, install_1024_icons, keep_versions, parallel_checks,
@@ -227,6 +227,7 @@ Uninstall: `./scripts/uninstall.sh [--apps] [--purge]`.
   a painter-drawn upward arrow; `→` in the update dialog is shown as `->` inside egui.
 - Added TextureCraft (3D texture painting) to the supported app suite (14 apps total).
 - Added MaterialCraft (procedural materials) to the supported app suite (15 apps total).
+- Added AniCraft (2D vector animation) to the supported app suite (16 apps total).
 - GPG verification now warns instead of failing when the signing key is missing from the
   keyring (unless `require_gpg_signature` is set).
 - Settings view is now compact (two columns) and scrollable; "Open config folder" works on
