@@ -436,6 +436,18 @@ The core logic is free of UI dependencies and is shared by GUI and CLI through
 
 ---
 
+
+## Version history
+
+- **v0.1.7** – Add AniCraft (2D vector animation); 16 supported apps.
+- **v0.1.6** – Compact, scrollable settings view; open config folder works on Windows.
+- **v0.1.5** – GPG verification warns instead of failing when the signing key is missing.
+- **v0.1.4** – Add MaterialCraft (procedural materials); 15 supported apps.
+- **v0.1.3** – Add TextureCraft (3D texture painting); 14 supported apps.
+- **v0.1.2** – Update-available marker drawn as an arrow instead of a tofu box.
+- **v0.1.1** – Fix unresponsive Omarchy bar plugin.
+- **v0.1.0** – Initial release.
+
 ## License
 
 MIT – see `LICENSE`. Copyright (c) 2026 Joscha Riedl.
