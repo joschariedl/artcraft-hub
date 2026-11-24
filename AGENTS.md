@@ -209,7 +209,8 @@ Uninstall: `./scripts/uninstall.sh [--apps] [--purge]`.
 ## Recent changes (summary)
 
 Version history: v0.1.0 initial · v0.1.1 plugin fix · v0.1.2 GUI glyph fix · v0.1.3 TextureCraft ·
-v0.1.4 MaterialCraft · v0.1.5 GPG key handling · v0.1.6 compact settings · v0.1.7 AniCraft.
+v0.1.4 MaterialCraft · v0.1.5 GPG key handling · v0.1.6 compact settings · v0.1.7 AniCraft ·
+v0.1.8 recognize RC releases.
 
 - Initial workspace: artcraft-core, artcraft-hub (GUI), artcraftctl (CLI).
 - Bugfix: `icon_paths()` now includes all apps' icons (was only pdfcraft).

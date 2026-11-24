@@ -439,6 +439,7 @@ The core logic is free of UI dependencies and is shared by GUI and CLI through
 
 ## Version history
 
+- **v0.1.8** – Recognize pre-release (RC) versions as latest.
 - **v0.1.7** – Add AniCraft (2D vector animation); 16 supported apps.
 - **v0.1.6** – Compact, scrollable settings view; open config folder works on Windows.
 - **v0.1.5** – GPG verification warns instead of failing when the signing key is missing.
